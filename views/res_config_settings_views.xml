@@ -1,0 +1,22 @@
+<!-- qelyos_ecom_dynamic_picking/views/res_config_settings_views.xml -->
+<odoo>
+  <record id="view_res_config_settings_qelyos_ecom" model="ir.ui.view">
+    <field name="name">res.config.settings.qelyos.ecom.dynamic.picking</field>
+    <field name="model">res.config.settings</field>
+    <field name="inherit_id" ref="stock.res_config_settings_view_form"/>
+    <field name="arch" type="xml">
+      <xpath expr="//div[hasclass('settings')]" position="inside">
+        <div class="app_settings_block" string="eCommerce Multi‑Stores" data-key="qelyos_ecom_dynamic_picking">
+          <h2>eCommerce – Sélection automatique du magasin expéditeur</h2>
+          <group>
+            <field name="ecom_dynamic_source_location_ids" widget="many2many_tags"/>
+            <field name="ecom_dynamic_strategy"/>
+            <field name="ecom_dynamic_only_website"/>
+            <field name="ecom_dynamic_switch_picking_type"/>
+            <label string="Astuce : l'ordre des emplacements dans cette liste = ordre de priorité en cas d'égalité."/>
+          </group>
+        </div>
+      </xpath>
+    </field>
+  </record>
+</odoo>
