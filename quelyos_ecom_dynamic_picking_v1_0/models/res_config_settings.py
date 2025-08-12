@@ -18,13 +18,13 @@ class ResConfigSettings(models.TransientModel):
         string=_("Emplacements source autorisés"),
         help=_("Emplacements source qui peuvent être assignés dynamiquement aux mouvements sortants.")
     )
-
+    
     quelyos_in_steps = fields.Selection([
         ("1", _("IN en 1 étape (Réception)")),
         ("2", _("IN en 2 étapes (Entrée → Stock)")),
         ("3", _("IN en 3 étapes (Entrée → Contrôle → Stock)")),
     ], string=_("Flux IN (réceptions)"), default="1")
-
+    
     quelyos_out_steps = fields.Selection([
         ("1", _("OUT en 1 étape (Livrer)")),
         ("2", _("OUT en 2 étapes (Préparer → Livrer)")),
@@ -35,12 +35,33 @@ class ResConfigSettings(models.TransientModel):
         string=_("Ordre strict des opérations (par groupe)"),
         config_parameter="quelyos_ecom_dynamic_picking.strict_order",
     )
-
+    
     quelyos_dual_log = fields.Boolean(
         string=_("Journalisation Dual-Log"),
         config_parameter="quelyos_ecom_dynamic_picking.dual_log",
     )
 
+    # Nouveaux champs pour la stratégie
+    quelyos_strategy = fields.Selection([
+        ("custom_criteria", _("Critères personnalisés (Custom Criteria)")),
+        ("disabled", _("Désactivé")),
+    ], string=_("Stratégie de sélection de l'emplacement"), default="custom_criteria")
+    
+    quelyos_stock_basis = fields.Selection([
+        ("free_quantity", _("Quantité libre (Free Quantity)")),
+        ("on_hand", _("Quantité en stock (On-Hand)")),
+        ("forecast", _("Stock prévisionnel (Forecast)")),
+    ], string=_("Base de calcul des disponibilités"), default="free_quantity")
+    
+    quelyos_shop_locations = fields.Many2many(
+        "stock.location",
+        "quelyos_shop_loc_rel",
+        "config_id",
+        "shop_location_id",
+        string=_("Boutiques à considérer"),
+        help=_("Liste des emplacements des boutiques pour le calcul du stock.")
+    )
+    
     def action_quelyos_apply_steps_to_all_warehouses(self):
         self.ensure_one()
         in_map = {"1": "one_step", "2": "two_steps", "3": "three_steps"}
@@ -59,14 +80,26 @@ class ResConfigSettings(models.TransientModel):
         params = self.env["ir.config_parameter"].sudo()
         ids_str = ",".join(str(x) for x in self.quelyos_dynamic_source_location_ids.ids) if self.quelyos_dynamic_source_location_ids else ""
         params.set_param("quelyos_ecom_dynamic_picking.allowed_src_ids", ids_str)
-
+        # Enregistrement des nouveaux paramètres
+        params.set_param("quelyos_ecom_dynamic_picking.strategy", self.quelyos_strategy)
+        params.set_param("quelyos_ecom_dynamic_picking.stock_basis", self.quelyos_stock_basis)
+        shop_ids_str = ",".join(str(x) for x in self.quelyos_shop_locations.ids) if self.quelyos_shop_locations else ""
+        params.set_param("quelyos_ecom_dynamic_picking.shop_locations", shop_ids_str)
+    
     @api.model
     def get_values(self):
         res = super().get_values()
         params = self.env["ir.config_parameter"].sudo()
         ids_str = params.get_param("quelyos_ecom_dynamic_picking.allowed_src_ids") or ""
         ids = [int(x) for x in ids_str.split(",") if x]
+        
+        shop_ids_str = params.get_param("quelyos_ecom_dynamic_picking.shop_locations") or ""
+        shop_ids = [int(x) for x in shop_ids_str.split(",") if x]
+
         res.update({
-            "quelyos_dynamic_source_location_ids": [(6, 0, ids)]
+            "quelyos_dynamic_source_location_ids": [(6, 0, ids)],
+            "quelyos_strategy": params.get_param("quelyos_ecom_dynamic_picking.strategy", default="custom_criteria"),
+            "quelyos_stock_basis": params.get_param("quelyos_ecom_dynamic_picking.stock_basis", default="free_quantity"),
+            "quelyos_shop_locations": [(6, 0, shop_ids)],
         })
         return res
