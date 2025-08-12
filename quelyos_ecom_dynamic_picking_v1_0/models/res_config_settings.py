@@ -40,22 +40,29 @@ class ResConfigSettings(models.TransientModel):
     # ====== Chargement ======
     @api.model
     def get_values(self):
-        res = super().get_values()
+        res = super(ResConfigSettings, self).get_values()
         ICP = self.env['ir.config_parameter'].sudo()
-
-        shop_ids_csv = ICP.get_param('quelyos_dynamic_shop_ids', '')
-        shop_ids = [int(x) for x in shop_ids_csv.split(',') if x]
-
+    
+        # Fallback pour qu'aucune ancienne valeur invalide ne casse le formulaire
+        val = ICP.get_param('quelyos_dynamic_strategy', 'custom')
+        if val not in ('custom', 'disabled'):
+            val = 'custom'
+    
         res.update(
-            quelyos_dynamic_strategy=ICP.get_param('quelyos_dynamic_strategy', 'custom'),
-            quelyos_dynamic_stock_basis=ICP.get_param('quelyos_dynamic_stock_basis', 'free'),
-            quelyos_dynamic_only_website=ICP.get_param('quelyos_dynamic_only_website') == 'True',
-            quelyos_dynamic_central_location_id=int(ICP.get_param('quelyos_dynamic_central_location_id') or 0) or False,
-            quelyos_dynamic_shop_ids=[(6, 0, shop_ids)],
-            quelyos_dynamic_strict_order_enabled=ICP.get_param('quelyos_dynamic_strict_order_enabled') == 'True',
-            quelyos_dynamic_shop_order_names=ICP.get_param('quelyos_dynamic_shop_order_names', '')
+            quelyos_dynamic_strategy=val,
+            quelyos_dynamic_only_website=ICP.get_param('quelyos_dynamic_only_website', default='False') == 'True'
         )
+    
+        location_ids = ICP.get_param('quelyos_dynamic_source_location_ids')
+        if location_ids:
+            res.update(
+                quelyos_dynamic_source_location_ids=[(6, 0, list(map(int, location_ids.split(','))))]
+            )
+        else:
+            res.update(quelyos_dynamic_source_location_ids=False)
+    
         return res
+
 
     # ====== Sauvegarde ======
     def set_values(self):
