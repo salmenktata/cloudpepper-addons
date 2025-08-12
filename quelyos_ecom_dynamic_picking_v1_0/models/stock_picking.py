@@ -34,18 +34,22 @@ class StockPicking(models.Model):
     # Core: auto source selection + internal replenishment
     def _quelyos_apply_auto_source_strategy(self):
         P = self.env["ir.config_parameter"].sudo()
+
         strategy = P.get_param("quelyos_ecom_dynamic_picking.strategy", "custom")
-        only_web = P.get_param("quelyos_ecom_dynamic_picking.only_website")
+        only_web = P.get_param("quelyos_ecom_dynamic_picking.only_website") in ("1", "True", "true")
+
         if strategy == "disabled":
             return
+
         sale = getattr(self, "sale_id", False)
         if only_web and sale and not sale.website_id:
             return
 
         basis = P.get_param("quelyos_ecom_dynamic_picking.stock_basis", "free")
         central_id = int(P.get_param("quelyos_ecom_dynamic_picking.central_location_id") or 0)
-        shop_ids = [int(x) for x in (P.get_param("quelyos_ecom_dynamic_picking.shop_ids") or "").split(",") if x]
+        shop_ids = list(map(int, filter(None, (P.get_param("quelyos_ecom_dynamic_picking.shop_ids") or "").split(","))))
         strict_names_enabled = P.get_param("quelyos_ecom_dynamic_picking.strict_shop_order_enabled") in ("1", "True", "true")
+
         order_names = (P.get_param("quelyos_ecom_dynamic_picking.shop_order_names") or "").replace(">", ",")
         priority_names = [n.strip() for n in order_names.split(",") if n.strip()] if order_names else []
 
@@ -80,9 +84,9 @@ class StockPicking(models.Model):
                 if not quants:
                     return 0.0
                 return (quants[0].get("quantity", 0.0) or 0.0) - (quants[0].get("reserved_quantity", 0.0) or 0.0)
-            else:
-                prod = product.with_context(location=location.id)
-                return prod.virtual_available
+            elif basis == "forecast":
+                return product.with_context(location=location.id, strict=True).virtual_available
+            return 0.0
 
         # Central coverage
         central_ok = False
@@ -157,17 +161,20 @@ class StockPicking(models.Model):
                     ("code", "=", "internal"),
                     ("warehouse_id", "=", self.picking_type_id.warehouse_id.id),
                 ], limit=1) or self.env["stock.picking.type"].sudo().search([("code", "=", "internal")], limit=1)
-                self.env["stock.picking"].sudo().create({
+
+                replenish = self.env["stock.picking"].sudo().create({
                     "picking_type_id": picking_type.id if picking_type else False,
                     "location_id": central.id,
                     "location_dest_id": final_source.id,
                     "origin": (self.name or self.origin or "") + " / Replenish",
                     "move_ids_without_package": moves_data,
                 })
+                self.message_post(body=f"🚚 Réassort interne créé automatiquement : <b>{replenish.name}</b>")
                 created_replenish = True
 
         self._quelyos_log_event("auto_source", {
             "strategy": strategy,
+            "strategy_applied": strategy_applied,
             "basis": basis,
             "central": central and central.display_name,
             "chosen": final_source.display_name if final_source else False,
@@ -196,6 +203,7 @@ class StockPicking(models.Model):
         if blockers:
             raise UserError(_("Ordre strict: vous devez d'abord terminer '%s' (type: %s).")
                             % (blockers.display_name, blockers.picking_type_id.display_name))
+
 
 class SaleOrder(models.Model):
     _inherit = "sale.order"
