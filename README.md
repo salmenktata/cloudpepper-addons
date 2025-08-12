@@ -1,4 +1,4 @@
-# cloudpepper-addonsVoici la **synthèse fonctionnelle** claire et complète de ton module **Qelyos Dynamic Picking (v8.3.9)** :
+# cloudpepper-addons **synthèse fonctionnelle** claire et complète du module **Quelyos Dynamic Picking (v8.3.9)** :
 
 ---
 
@@ -72,7 +72,4 @@ Via **Paramètres > Inventaire > Qelyos Dynamic Picking** :
 * Scénarios où il faut optimiser le lieu d’expédition pour réduire les transferts.
 * Besoin d’un réassort interne automatique si le stock local est insuffisant.
 
----
-
-Si tu veux, je peux te faire **une version illustrée avec schémas** pour que ce descriptif soit présent directement dans le menu *Applications* d’Odoo, afin que l’utilisateur voie exactement ce que fait le module avant de l’installer.
 Veux-tu que je te prépare ça ?
