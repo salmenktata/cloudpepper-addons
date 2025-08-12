@@ -3,10 +3,12 @@
   <record id="view_quelyos_dynamic_picking_sales_settings" model="ir.ui.view">
     <field name="name">quelyos.dynamic.picking.sales.settings</field>
     <field name="model">res.config.settings</field>
+    <!-- On garde l'intégration dans Ventes ; si tu es en CE, ce ref est bon -->
     <field name="inherit_id" ref="sale.res_config_settings_view_form"/>
     <field name="arch" type="xml">
-      <xpath expr="//div[contains(@class,'o_settings_container')]" position="inside">
-        <div class="app_settings_block" string="Quelyos – Dynamic Picking">
+      <!-- ⬇️ Remplacer l'ancien xpath par celui-ci -->
+      <xpath expr="//form" position="inside">
+        <div class="app_settings_block">
           <h2>Quelyos – Dynamic Picking</h2>
           <div class="row mt16">
             <div class="col-12 col-lg-6">
@@ -16,7 +18,7 @@
                 </div>
                 <div class="o_setting_right_pane">
                   <label for="quelyos_strategy"/>
-                  <div class="text-muted">Custom = sélectionne automatiquement l'emplacement source selon la disponibilité.</div>
+                  <div class="text-muted">Custom = sélection auto de la source selon la disponibilité.</div>
                 </div>
               </div>
 
@@ -36,7 +38,7 @@
                 </div>
                 <div class="o_setting_right_pane">
                   <label for="quelyos_dynamic_only_website"/>
-                  <div class="text-muted">N'appliquer que pour les commandes eCommerce.</div>
+                  <div class="text-muted">N’appliquer que pour eCommerce.</div>
                 </div>
               </div>
 
@@ -46,7 +48,7 @@
                 </div>
                 <div class="o_setting_right_pane">
                   <label for="quelyos_dual_log"/>
-                  <div class="text-muted">Poste un log des événements dans le chatter.</div>
+                  <div class="text-muted">Log des événements dans le chatter.</div>
                 </div>
               </div>
             </div>
@@ -88,7 +90,7 @@
                 </div>
                 <div class="o_setting_right_pane">
                   <label for="quelyos_strict_shop_order_enabled"/>
-                  <div class="text-muted">Tester les boutiques dans l'ordre défini.</div>
+                  <div class="text-muted">Tester les boutiques dans l’ordre défini.</div>
                 </div>
               </div>
 
@@ -98,42 +100,9 @@
                 </div>
                 <div class="o_setting_right_pane">
                   <label for="quelyos_shop_order_names"/>
-                  <div class="text-muted">Ex: Gafsa,Sousse,Soukra</div>
+                  <div class="text-muted">Ex&nbsp;: Gafsa,Sousse,Soukra</div>
                 </div>
               </div>
-
-              <div class="o_setting_box">
-                <div class="o_setting_left_pane">
-                  <field name="quelyos_strict_order"/>
-                </div>
-                <div class="o_setting_right_pane">
-                  <label for="quelyos_strict_order"/>
-                  <div class="text-muted">Ordre strict des opérations (par groupe).</div>
-                </div>
-              </div>
-
-              <div class="o_setting_box">
-                <div class="o_setting_left_pane">
-                  <field name="quelyos_in_steps"/>
-                </div>
-                <div class="o_setting_right_pane">
-                  <label for="quelyos_in_steps"/>
-                </div>
-              </div>
-
-              <div class="o_setting_box">
-                <div class="o_setting_left_pane">
-                  <field name="quelyos_out_steps"/>
-                </div>
-                <div class="o_setting_right_pane">
-                  <label for="quelyos_out_steps"/>
-                  <button name="action_quelyos_apply_steps_to_all_warehouses"
-                          type="object" class="btn btn-primary mt8">
-                    Appliquer à tous les entrepôts
-                  </button>
-                </div>
-              </div>
-
             </div>
           </div>
         </div>
