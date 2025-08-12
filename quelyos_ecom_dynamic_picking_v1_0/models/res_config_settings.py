@@ -4,59 +4,40 @@ from odoo import models, fields, api
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
-    quelyos_dynamic_strategy = fields.Selection(
-        selection=[
-            ('one_step', '1 Step'),
-            ('two_steps', '2 Steps'),
-            ('three_steps', '3 Steps')
-        ],
-        string="Dynamic Picking Strategy",
-        default='one_step'
-    )
+    quelyos_dynamic_strategy = fields.Selection([
+        ('disabled', 'Disabled'),
+        ('custom', 'Custom Criteria')
+    ], string="Applied Strategy", default='custom')
+
+    quelyos_stock_basis = fields.Selection([
+        ('free', 'Free Quantity'),
+        ('onhand', 'On-Hand'),
+        ('forecast', 'Forecast')
+    ], string="Stock Basis", default='free')
+
+    quelyos_order_strict = fields.Boolean(string="Strict Order (Gafsa → Sousse → Soukra)", default=False)
 
     quelyos_dynamic_source_location_ids = fields.Many2many(
         'stock.location',
-        string="Source Locations"
+        string="Boutiques à considérer"
     )
 
-    quelyos_dynamic_only_website = fields.Boolean(
-        string="Apply Only to Website Orders",
-        default=False
-    )
-
-    # Chargement des valeurs
     @api.model
     def get_values(self):
-        res = super(ResConfigSettings, self).get_values()
+        res = super().get_values()
         ICP = self.env['ir.config_parameter'].sudo()
-
         res.update(
-            quelyos_dynamic_strategy=ICP.get_param('quelyos_dynamic_strategy', default='one_step'),
-            quelyos_dynamic_only_website=ICP.get_param('quelyos_dynamic_only_website', default='False') == 'True'
+            quelyos_dynamic_strategy=ICP.get_param('quelyos_dynamic_strategy', 'custom'),
+            quelyos_stock_basis=ICP.get_param('quelyos_stock_basis', 'free'),
+            quelyos_order_strict=ICP.get_param('quelyos_order_strict') == 'True',
+            quelyos_dynamic_source_location_ids=[(6, 0, list(map(int, ICP.get_param('quelyos_dynamic_source_location_ids', '').split(','))))] if ICP.get_param('quelyos_dynamic_source_location_ids') else False
         )
-
-        location_ids = ICP.get_param('quelyos_dynamic_source_location_ids')
-        if location_ids:
-            res.update(
-                quelyos_dynamic_source_location_ids=[(6, 0, list(map(int, location_ids.split(','))))]
-            )
-        else:
-            res.update(quelyos_dynamic_source_location_ids=False)
-
         return res
 
-    # Sauvegarde des valeurs
     def set_values(self):
-        super(ResConfigSettings, self).set_values()
+        super().set_values()
         ICP = self.env['ir.config_parameter'].sudo()
-
-        ICP.set_param('quelyos_dynamic_strategy', self.quelyos_dynamic_strategy or 'one_step')
-        ICP.set_param('quelyos_dynamic_only_website', 'True' if self.quelyos_dynamic_only_website else 'False')
-
-        if self.quelyos_dynamic_source_location_ids:
-            ICP.set_param(
-                'quelyos_dynamic_source_location_ids',
-                ','.join(map(str, self.quelyos_dynamic_source_location_ids.ids))
-            )
-        else:
-            ICP.set_param('quelyos_dynamic_source_location_ids', '')
+        ICP.set_param('quelyos_dynamic_strategy', self.quelyos_dynamic_strategy)
+        ICP.set_param('quelyos_stock_basis', self.quelyos_stock_basis)
+        ICP.set_param('quelyos_order_strict', 'True' if self.quelyos_order_strict else 'False')
+        ICP.set_param('quelyos_dynamic_source_location_ids', ','.join(map(str, self.quelyos_dynamic_source_location_ids.ids)) if self.quelyos_dynamic_source_location_ids else '')
