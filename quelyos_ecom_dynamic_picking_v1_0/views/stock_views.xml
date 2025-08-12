@@ -10,6 +10,9 @@
           <field name="quelyos_log" readonly="1" nolabel="1"/>
         </page>
       </xpath>
+      <xpath expr="//field[@name='origin']" position="after">
+        <field name="quelyos_reassort_picking_id" string="Picking de réassort" attrs="{'invisible': [('quelyos_reassort_picking_id', '=', False)]}"/>
+      </xpath>
     </field>
   </record>
 </odoo>
