@@ -7,7 +7,7 @@
     "website": "https://quelyos.com",
     "license": "LGPL-3",
     "category": "Inventory/Inventory",
-    "depends": ["stock", "sale_management", "website_sale"],
+    "depends": ["stock", "sale_management", "website_sale", "stock_account"], # Ajout de stock_account
     "data": [
         "security/ir.model.access.csv",
         "views/res_config_settings_views.xml",
