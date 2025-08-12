@@ -5,20 +5,14 @@
         <field name="model">res.config.settings</field>
         <field name="inherit_id" ref="sale.res_config_settings_view_form"/>
         <field name="arch" type="xml">
-
-            <!-- On insère juste après l’option "delivery" -->
-            <xpath expr="//setting[@id='delivery']" position="after">
-                <setting id="quelyos_dynamic_picking"
-                         string="Quelyos – Dynamic Picking"
-                         help="Active et configure le picking dynamique pour les ventes eCommerce.">
+            <xpath expr="//block[@name='sale_shipping_setting_container']" position="inside">
+                <setting id="quelyos_dynamic_picking" string="Quelyos – Dynamic Picking" help="Active la sélection dynamique d’emplacement source pour les livraisons sortantes.">
                     <field name="quelyos_dynamic_strategy"/>
+                    <field name="quelyos_stock_basis"/>
+                    <field name="quelyos_order_strict"/>
                     <field name="quelyos_dynamic_source_location_ids" widget="many2many_tags"/>
-                    <field name="quelyos_dynamic_only_website"/>
                 </setting>
             </xpath>
-
         </field>
     </record>
 </odoo>
-
-
