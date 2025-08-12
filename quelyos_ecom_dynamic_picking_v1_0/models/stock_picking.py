@@ -29,8 +29,6 @@ class StockPicking(models.Model):
             })
         return res
 
-
-
     def button_validate(self):
         if self.env["ir.config_parameter"].sudo().get_param("quelyos_ecom_dynamic_picking.strict_order"):
             for picking in self:
@@ -94,7 +92,8 @@ class StockPicking(models.Model):
                     return 0.0
                 return (quants[0].get("quantity", 0.0) or 0.0) - (quants[0].get("reserved_quantity", 0.0) or 0.0)
             elif basis == "forecast":
-                return product.with_context(location=location.id, strict=True).virtual_available
+                # Agrège les sous-emplacements (compute_child=True), sans 'strict'
+                return product.with_context(location=location.id, compute_child=True).virtual_available
             return 0.0
 
         # Central coverage
