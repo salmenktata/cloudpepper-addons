@@ -5,9 +5,9 @@ class ResConfigSettings(models.TransientModel):
     _inherit = "res.config.settings"
 
     quelyos_dynamic_only_website = fields.Boolean(
-        string="Activer uniquement pour eCommerce",
+        string=_("Activer uniquement pour eCommerce"),
         config_parameter="quelyos_ecom_dynamic_picking.only_website",
-        help="Si activé, n'applique les règles dynamiques que pour les commandes Website."
+        help=_("Si activé, n'applique les règles dynamiques que pour les commandes Website.")
     )
 
     quelyos_dynamic_source_location_ids = fields.Many2many(
@@ -15,29 +15,29 @@ class ResConfigSettings(models.TransientModel):
         "quelyos_ecom_src_loc_rel",
         "config_id",
         "location_id",
-        string="Emplacements source autorisés",
-        help="Emplacements source qui peuvent être assignés dynamiquement aux mouvements sortants."
+        string=_("Emplacements source autorisés"),
+        help=_("Emplacements source qui peuvent être assignés dynamiquement aux mouvements sortants.")
     )
 
     quelyos_in_steps = fields.Selection([
-        ("1", "IN en 1 étape (Réception)"),
-        ("2", "IN en 2 étapes (Entrée → Stock)"),
-        ("3", "IN en 3 étapes (Entrée → Contrôle → Stock)"),
-    ], string="Flux IN (réceptions)", default="1")
+        ("1", _("IN en 1 étape (Réception)")),
+        ("2", _("IN en 2 étapes (Entrée → Stock)")),
+        ("3", _("IN en 3 étapes (Entrée → Contrôle → Stock)")),
+    ], string=_("Flux IN (réceptions)"), default="1")
 
     quelyos_out_steps = fields.Selection([
-        ("1", "OUT en 1 étape (Livrer)"),
-        ("2", "OUT en 2 étapes (Préparer → Livrer)"),
-        ("3", "OUT en 3 étapes (Préparer → Emballer → Livrer)"),
-    ], string="Flux OUT (livraisons)", default="1")
+        ("1", _("OUT en 1 étape (Livrer)")),
+        ("2", _("OUT en 2 étapes (Préparer → Livrer)")),
+        ("3", _("OUT en 3 étapes (Préparer → Emballer → Livrer)")),
+    ], string=_("Flux OUT (livraisons)"), default="1")
 
     quelyos_strict_order = fields.Boolean(
-        string="Ordre strict des opérations (par groupe)",
+        string=_("Ordre strict des opérations (par groupe)"),
         config_parameter="quelyos_ecom_dynamic_picking.strict_order",
     )
 
     quelyos_dual_log = fields.Boolean(
-        string="Journalisation Dual-Log",
+        string=_("Journalisation Dual-Log"),
         config_parameter="quelyos_ecom_dynamic_picking.dual_log",
     )
 
