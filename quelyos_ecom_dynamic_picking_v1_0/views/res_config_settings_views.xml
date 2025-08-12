@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <record id="view_quelyos_dynamic_picking_sales_settings" model="ir.ui.view">
         <field name="name">quelyos.dynamic.picking.sales.settings</field>
