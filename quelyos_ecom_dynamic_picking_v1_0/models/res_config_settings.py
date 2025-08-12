@@ -2,109 +2,61 @@
 from odoo import models, fields, api
 
 class ResConfigSettings(models.TransientModel):
-    _inherit = "res.config.settings"
+    _inherit = 'res.config.settings'
 
-    # Strategy & basis (auto persisted)
-    quelyos_strategy = fields.Selection(
-        [("disabled", "Disabled"), ("custom", "Custom Criteria")],
-        string="Applied Strategy",
-        default="custom",
-        config_parameter="quelyos_ecom_dynamic_picking.strategy",
-    )
-    quelyos_stock_basis = fields.Selection(
-        [("free", "Free Quantity"), ("onhand", "On-Hand"), ("forecast", "Forecast")],
-        string="Stock Basis",
-        default="free",
-        config_parameter="quelyos_ecom_dynamic_picking.stock_basis",
-    )
-    quelyos_strict_shop_order_enabled = fields.Boolean(
-        string="Ordre strict des boutiques (priorité)",
-        config_parameter="quelyos_ecom_dynamic_picking.strict_shop_order_enabled",
-    )
-    quelyos_shop_order_names = fields.Char(
-        string="Ordre des boutiques (noms séparés par , ou >)",
-        default="Gafsa,Sousse,Soukra",
-        config_parameter="quelyos_ecom_dynamic_picking.shop_order_names",
+    quelyos_dynamic_strategy = fields.Selection(
+        selection=[
+            ('one_step', '1 Step'),
+            ('two_steps', '2 Steps'),
+            ('three_steps', '3 Steps')
+        ],
+        string="Dynamic Picking Strategy",
+        default='one_step'
     )
 
-    # Scope & options (auto persisted)
-    quelyos_dynamic_only_website = fields.Boolean(
-        string="Activer uniquement pour eCommerce",
-        config_parameter="quelyos_ecom_dynamic_picking.only_website",
-    )
-    quelyos_strict_order = fields.Boolean(
-        string="Ordre strict des opérations (par groupe)",
-        config_parameter="quelyos_ecom_dynamic_picking.strict_order",
-    )
-    quelyos_dual_log = fields.Boolean(
-        string="Journalisation Dual-Log",
-        config_parameter="quelyos_ecom_dynamic_picking.dual_log",
-    )
-
-    # Locations
-    quelyos_central_location_id = fields.Many2one(
-        "stock.location",
-        string="Emplacement Central (CENT/Stock)",
-        domain=[("usage", "=", "internal")],
-        config_parameter="quelyos_ecom_dynamic_picking.central_location_id",
-    )
-    quelyos_shop_location_ids = fields.Many2many(
-        "stock.location", "quelyos_ecom_shop_loc_rel", "config_id", "location_id",
-        string="Boutiques à considérer", domain=[("usage", "=", "internal")]
-    )
     quelyos_dynamic_source_location_ids = fields.Many2many(
-        "stock.location", "quelyos_ecom_src_loc_rel", "config_id", "location_id",
-        string="Emplacements source autorisés (restriction UI)", domain=[("usage", "=", "internal")]
+        'stock.location',
+        string="Source Locations"
     )
 
-    # Steps (applied via button)
-    quelyos_in_steps = fields.Selection(
-        [("1", "IN en 1 étape (Réception)"),
-         ("2", "IN en 2 étapes (Entrée → Stock)"),
-         ("3", "IN en 3 étapes (Entrée → Contrôle → Stock)")],
-        string="Flux IN (réceptions)", default="1"
-    )
-    quelyos_out_steps = fields.Selection(
-        [("1", "OUT en 1 étape (Livrer)"),
-         ("2", "OUT en 2 étapes (Préparer → Livrer)"),
-         ("3", "OUT en 3 étapes (Préparer → Emballer → Livrer)")],
-        string="Flux OUT (livraisons)", default="1"
+    quelyos_dynamic_only_website = fields.Boolean(
+        string="Apply Only to Website Orders",
+        default=False
     )
 
-    def action_quelyos_apply_steps_to_all_warehouses(self):
-        self.ensure_one()
-        in_map = {"1": "one_step", "2": "two_steps", "3": "three_steps"}
-        out_map = {"1": "ship_only", "2": "pick_ship", "3": "pick_pack_ship"}
-        warehouses = self.env["stock.warehouse"].search([])
-        for wh in warehouses:
-            wh._quelyos_set_in_steps(in_map[self.quelyos_in_steps])
-            wh._quelyos_set_out_steps(out_map[self.quelyos_out_steps])
-        return {
-            "type": "ir.actions.client",
-            "tag": "display_notification",
-            "params": {"title": "Flux appliqués",
-                       "message": "Réglages IN/OUT appliqués à tous les entrepôts.",
-                       "sticky": False},
-        }
-
-    # Persist M2M via set/get
-    def set_values(self):
-        res = super().set_values()
-        P = self.env["ir.config_parameter"].sudo()
-        shop_ids = ",".join(str(x) for x in self.quelyos_shop_location_ids.ids) if self.quelyos_shop_location_ids else ""
-        P.set_param("quelyos_ecom_dynamic_picking.shop_ids", shop_ids)
-        src_ids = ",".join(str(x) for x in self.quelyos_dynamic_source_location_ids.ids) if self.quelyos_dynamic_source_location_ids else ""
-        P.set_param("quelyos_ecom_dynamic_picking.allowed_src_ids", src_ids)
-        return res
-
+    # Chargement des valeurs
     @api.model
     def get_values(self):
-        res = super().get_values()
-        P = self.env["ir.config_parameter"].sudo()
-        shop_ids = [int(x) for x in (P.get_param("quelyos_ecom_dynamic_picking.shop_ids") or "").split(",") if x]
-        src_ids = [int(x) for x in (P.get_param("quelyos_ecom_dynamic_picking.allowed_src_ids") or "").split(",") if x]
-        res.update({
-            "quelyos_shop_location_ids": [(6, 0, shop_ids)],
-            "quelyos_dynamic_source_location_ids": [(6, 0, src_ids)],
-        })
+        res = super(ResConfigSettings, self).get_values()
+        ICP = self.env['ir.config_parameter'].sudo()
+
+        res.update(
+            quelyos_dynamic_strategy=ICP.get_param('quelyos_dynamic_strategy', default='one_step'),
+            quelyos_dynamic_only_website=ICP.get_param('quelyos_dynamic_only_website', default='False') == 'True'
+        )
+
+        location_ids = ICP.get_param('quelyos_dynamic_source_location_ids')
+        if location_ids:
+            res.update(
+                quelyos_dynamic_source_location_ids=[(6, 0, list(map(int, location_ids.split(','))))]
+            )
+        else:
+            res.update(quelyos_dynamic_source_location_ids=False)
+
         return res
+
+    # Sauvegarde des valeurs
+    def set_values(self):
+        super(ResConfigSettings, self).set_values()
+        ICP = self.env['ir.config_parameter'].sudo()
+
+        ICP.set_param('quelyos_dynamic_strategy', self.quelyos_dynamic_strategy or 'one_step')
+        ICP.set_param('quelyos_dynamic_only_website', 'True' if self.quelyos_dynamic_only_website else 'False')
+
+        if self.quelyos_dynamic_source_location_ids:
+            ICP.set_param(
+                'quelyos_dynamic_source_location_ids',
+                ','.join(map(str, self.quelyos_dynamic_source_location_ids.ids))
+            )
+        else:
+            ICP.set_param('quelyos_dynamic_source_location_ids', '')
