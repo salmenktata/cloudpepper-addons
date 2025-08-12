@@ -18,10 +18,20 @@
                     type="object" class="oe_highlight"
                     string="Appliquer à tous les entrepôts"/>
           </group>
+
+          <group string="Stratégie de picking automatique">
+            <field name="quelyos_strategy"/>
+            <field name="quelyos_stock_basis" attrs="{'invisible': [('quelyos_strategy', '=', 'disabled')]}"/>
+            <field name="quelyos_shop_locations" widget="many2many_tags"
+                   context="{'default_usage': 'internal'}"
+                   attrs="{'invisible': [('quelyos_strategy', '=', 'disabled')]}"/>
+          </group>
+          
           <group string="Emplacements source (OUT)">
             <field name="quelyos_dynamic_source_location_ids" widget="many2many_tags"
                    context="{'default_usage': 'internal'}"/>
           </group>
+
           <separator string="Note"/>
           <p class="text-muted">
             Les champs avec persistance utilisent ir.config_parameter.
