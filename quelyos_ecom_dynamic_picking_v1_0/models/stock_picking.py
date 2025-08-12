@@ -21,10 +21,14 @@ class StockPicking(models.Model):
         for rec in self:
             # Réservé si au moins un move est 'assigned' ou 'partially_available'
             reserved = any(m.state in ('assigned', 'partially_available') for m in rec.move_ids_without_package)
-            # Somme des quantités effectivement réservées sur les move lines
-            reserved_qty = sum(rec.move_line_ids.mapped('reserved_uom_qty') or [0.0])
-            rec._quelyos_log_event("assign", {"reserved": reserved, "reserved_qty": reserved_qty})
+            # Somme des quantités effectivement réservées sur les move lines (Odoo 18)
+            reserved_qty = sum(rec.move_line_ids.mapped('reserved_qty') or [0.0])
+            rec._quelyos_log_event("assign", {
+                "reserved": reserved,
+                "reserved_qty": reserved_qty
+            })
         return res
+
 
 
     def button_validate(self):
