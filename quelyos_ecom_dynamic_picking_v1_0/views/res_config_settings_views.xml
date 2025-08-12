@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <record id="view_quelyos_dynamic_picking_sales_settings" model="ir.ui.view">
+    <field name="name">quelyos.dynamic.picking.sales.settings</field>
+    <field name="model">res.config.settings</field>
+    <field name="inherit_id" ref="sale.res_config_settings_view_form"/>
+    <field name="arch" type="xml">
+      <xpath expr="//div[contains(@class,'o_settings_container')]" position="inside">
+        <div class="app_settings_block" string="Quelyos – Dynamic Picking">
+          <h2>Quelyos – Dynamic Picking</h2>
+          <div class="row mt16">
+            <div class="col-12 col-lg-6">
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_strategy"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_strategy"/>
+                  <div class="text-muted">Custom = sélectionne automatiquement l'emplacement source selon la disponibilité.</div>
+                </div>
+              </div>
+
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_stock_basis"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_stock_basis"/>
+                  <div class="text-muted">Free / On‑Hand / Forecast.</div>
+                </div>
+              </div>
+
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_dynamic_only_website"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_dynamic_only_website"/>
+                  <div class="text-muted">N'appliquer que pour les commandes eCommerce.</div>
+                </div>
+              </div>
+
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_dual_log"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_dual_log"/>
+                  <div class="text-muted">Poste un log des événements dans le chatter.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12 col-lg-6">
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_central_location_id"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_central_location_id"/>
+                  <div class="text-muted">Emplacement central (CENT/Stock).</div>
+                </div>
+              </div>
+
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_shop_location_ids" widget="many2many_tags"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_shop_location_ids"/>
+                  <div class="text-muted">Boutiques à considérer.</div>
+                </div>
+              </div>
+
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_dynamic_source_location_ids" widget="many2many_tags"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_dynamic_source_location_ids"/>
+                  <div class="text-muted">Restriction UI des emplacements source.</div>
+                </div>
+              </div>
+
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_strict_shop_order_enabled"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_strict_shop_order_enabled"/>
+                  <div class="text-muted">Tester les boutiques dans l'ordre défini.</div>
+                </div>
+              </div>
+
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_shop_order_names"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_shop_order_names"/>
+                  <div class="text-muted">Ex: Gafsa,Sousse,Soukra</div>
+                </div>
+              </div>
+
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_strict_order"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_strict_order"/>
+                  <div class="text-muted">Ordre strict des opérations (par groupe).</div>
+                </div>
+              </div>
+
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_in_steps"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_in_steps"/>
+                </div>
+              </div>
+
+              <div class="o_setting_box">
+                <div class="o_setting_left_pane">
+                  <field name="quelyos_out_steps"/>
+                </div>
+                <div class="o_setting_right_pane">
+                  <label for="quelyos_out_steps"/>
+                  <button name="action_quelyos_apply_steps_to_all_warehouses"
+                          type="object" class="btn btn-primary mt8">
+                    Appliquer à tous les entrepôts
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </xpath>
+    </field>
+  </record>
+</odoo>
