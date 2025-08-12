@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <record id="view_quelyos_dynamic_picking_settings" model="ir.ui.view">
+    <field name="name">quelyos.dynamic.picking.settings</field>
+    <field name="model">res.config.settings</field>
+    <field name="arch" type="xml">
+      <form string="Quelyos – Dynamic Picking" create="false" edit="true">
+        <sheet>
+          <group string="Stratégie de sélection">
+            <field name="quelyos_strategy"/>
+            <field name="quelyos_stock_basis"/>
+            <field name="quelyos_strict_shop_order_enabled"/>
+            <field name="quelyos_shop_order_names" attrs="{'invisible':[('quelyos_strict_shop_order_enabled','=',False)]}"/>
+          </group>
+
+          <group string="Emplacements">
+            <field name="quelyos_central_location_id"/>
+            <field name="quelyos_shop_location_ids" widget="many2many_tags"/>
+            <field name="quelyos_dynamic_source_location_ids" widget="many2many_tags"/>
+          </group>
+
+          <group string="Portée &amp; options">
+            <field name="quelyos_dynamic_only_website"/>
+            <field name="quelyos_strict_order"/>
+            <field name="quelyos_dual_log"/>
+          </group>
+
+          <group string="Flux IN / OUT">
+            <field name="quelyos_in_steps"/>
+            <field name="quelyos_out_steps"/>
+            <button name="action_quelyos_apply_steps_to_all_warehouses"
+                    type="object" class="oe_highlight"
+                    string="Appliquer à tous les entrepôts"/>
+          </group>
+
+          <separator string="Aide"/>
+          <p class="text-muted">
+            - Strategy 'Custom' sélectionne automatiquement la source selon la disponibilité (basis) et crée un réassort interne si besoin.
+            - 'Free' = quantités libres (quants.quantity - reserved_quantity), 'On-Hand' = quantités physiques, 'Forecast' = stock virtuel.
+            - L'ordre strict des boutiques utilise les noms saisis (ex: Gafsa,Sousse,Soukra).
+          </p>
+        </sheet>
+        <footer>
+          <button string="Sauvegarder" type="object" name="execute" class="btn-primary"/>
+          <button string="Annuler" special="cancel" class="btn-secondary"/>
+        </footer>
+      </form>
+    </field>
+  </record>
+</odoo>
