@@ -1,217 +1,125 @@
-
 # -*- coding: utf-8 -*-
-from odoo import models, api
+from odoo import models, api, _
+
 
 class SaleOrder(models.Model):
-    _inherit = "sale.order"
+    _inherit = 'sale.order'
 
-    # ----- Quantities helpers -----
     @api.model
-    def _get_available_qty(self, product, location):
-        # Available quantity = excludes reservations, includes children
-        return self.env['stock.quant']._get_available_quantity(product, location)
+    def _get_available_quantities(self, products, locations):
+        """
+        Récupère les quantités disponibles de tous les produits sur tous les emplacements
+        en une seule requête pour optimiser les performances.
+        Retourne un dictionnaire de la forme:
+        {(product_id, location_id): available_qty}
+        """
+        quant_model = self.env['stock.quant']
+        quants = quant_model.search_read([
+            ('product_id', 'in', products.ids),
+            ('location_id', 'in', locations.ids),
+        ], ['product_id', 'location_id', 'quantity'])
 
-    def _score_location_for_picking(self, picking, loc):
-        # Score = min available across lines (guarantees single-source coverage if >= required per line)
-        if not picking.move_ids_without_package:
-            return 0.0
-        return min(self._get_available_qty(m.product_id, loc) for m in picking.move_ids_without_package)
+        available_qtys = {}
+        for quant in quants:
+            key = (quant['product_id'][0], quant['location_id'][0])
+            available_qtys[key] = available_qtys.get(key, 0.0) + quant['quantity']
+        
+        return available_qtys
 
-    # ----- Apply choice -----
-    def _apply_source_location(self, picking, chosen_loc, reason, debug_table_lines):
-        old_src = picking.location_id.display_name if picking.location_id else "N/A"
-        # Update picking + moves
-        picking.location_id = chosen_loc.id
-        for move in picking.move_ids_without_package:
-            move.location_id = chosen_loc.id
-        # (Re)assign reservations
-        try:
-            picking.action_assign()
-        except Exception:
-            picking.action_unreserve()
-            picking.action_assign()
+    def _find_best_location_for_strategy(self, picking, locations, strategy):
+        products_to_pick = picking.move_ids_without_package.product_id
+        available_qtys = self._get_available_quantities(products_to_pick, locations)
 
-        # Build plain-text log
-        lines = [ "[Dynamic Picking]",
-                  f"Source forcée: {old_src} → {chosen_loc.display_name}",
-                  reason, "",
-                  "Disponibilités :" ]
-        lines.extend([f"  - {name} : {qty}" for name, qty in debug_table_lines])
-        message = "\n".join(lines)
+        if strategy == 'first_covering':
+            return self._find_best_location_first_covering(picking, locations, available_qtys)
+        elif strategy == 'max_dispo':
+            return self._find_best_location_max_dispo(picking, locations, available_qtys)
+        elif strategy == 'central_then_max_all_then_order':
+            return self._find_best_location_central_then_max(picking, locations, available_qtys)
+        else: # Toujours dépôt par défaut
+            return picking.picking_type_id.default_location_src_id
 
-        # Post to picking chatter only (V8.1)
-        picking.message_post(body=message)
-
-    # ----- Internal transfer helper -----
-    def _find_internal_picking_type(self, source_loc_id, dest_loc_id):
-        return self.env['stock.picking.type'].search([
-            ('code', '=', 'internal'),
-            ('default_location_src_id', '=', source_loc_id),
-            ('default_location_dest_id', '=', dest_loc_id)
-        ], limit=1)
-
-    def _create_internal_transfer(self, dest_location, moves):
-        StockPicking = self.env['stock.picking']
-        for move in moves:
-            quant = self.env['stock.quant'].search([
-                ('product_id', '=', move.product_id.id),
-                ('quantity', '>=', move.product_uom_qty)
-            ], limit=1)
-            source_loc = quant.location_id
-            if not source_loc or source_loc == dest_location:
-                continue
-            picking_type = self._find_internal_picking_type(source_loc.id, dest_location.id)
-            if not picking_type:
-                continue
-            StockPicking.create({
-                'picking_type_id': picking_type.id,
-                'location_id': source_loc.id,
-                'location_dest_id': dest_location.id,
-                'move_ids_without_package': [(0, 0, {
-                    'name': move.product_id.display_name,
-                    'product_id': move.product_id.id,
-                    'product_uom_qty': move.product_uom_qty,
-                    'product_uom': move.product_uom.id,
-                    'location_id': source_loc.id,
-                    'location_dest_id': dest_location.id,
-                })]
-            })
-
-    # ----- Warehouse helpers -----
-    def _warehouse_key_locs(self, picking):
-        wh = picking.picking_type_id.warehouse_id or self.env['stock.warehouse'].search([('company_id','=',picking.company_id.id)], limit=1)
-        if not wh:
-            return {}
-        return {
-            'stock': wh.lot_stock_id,
-            'output': getattr(wh, 'wh_output_stock_loc_id', False),
-            'pack': getattr(wh, 'wh_pack_stock_loc_id', False),
-        }
-
-    def _classify_delivery_step(self, picking):
-        # Detect which leg to modify
-        if picking.picking_type_code == 'outgoing':
-            return 'outgoing'
-        if picking.picking_type_code == 'internal':
-            locs = self._warehouse_key_locs(picking)
-            src = picking.location_id
-            dst = picking.location_dest_id
-            if locs.get('stock') and locs.get('output') and src == locs['stock'] and dst == locs['output']:
-                return 'two_step_pick'
-            if locs.get('stock') and locs.get('pack') and src == locs['stock'] and dst == locs['pack']:
-                return 'three_step_pick'
+    def _find_best_location_first_covering(self, picking, locations, available_qtys):
+        for location in locations:
+            is_covering = True
+            for move in picking.move_ids_without_package:
+                required_qty = move.product_uom_qty
+                key = (move.product_id.id, location.id)
+                available_qty = available_qtys.get(key, 0.0)
+                if available_qty < required_qty:
+                    is_covering = False
+                    break
+            if is_covering:
+                return location
         return None
 
-    # ----- Choose location according to V8.1 rules -----
-    def _choose_location_for_picking(self, company, picking):
-        # Filter internal locations only
-        locations = company.ecom_dynamic_source_location_ids.filtered(lambda l: l.usage == 'internal')
-        if not locations:
-            return None, "", []
+    def _find_best_location_max_dispo(self, picking, locations, available_qtys):
+        best_location = None
+        max_total_qty = -1
+        for location in locations:
+            total_qty_for_location = sum(
+                available_qtys.get((move.product_id.id, location.id), 0.0)
+                for move in picking.move_ids_without_package
+            )
+            if total_qty_for_location > max_total_qty:
+                max_total_qty = total_qty_for_location
+                best_location = location
+        return best_location
 
-        lines = picking.move_ids_without_package
-        # Identify central stock from warehouse
-        wh_locs = self._warehouse_key_locs(picking)
-        central_loc = wh_locs.get('stock')
-
-        # Prepare availability table (plain text)
-        debug = []
-        # CENTRAL first (if exists)
-        if central_loc:
-            total = 0.0
-            for m in lines:
-                total = self._get_available_qty(m.product_id, central_loc)
-            debug.append((central_loc.display_name, total))
-
-        # Then all listed locations (ensure uniqueness)
-        seen = set()
-        if central_loc:
-            seen.add(central_loc.id)
-        for loc in locations:
-            if loc.id in seen:
-                continue
-            qty = 0.0
-            for m in lines:
-                qty = self._get_available_qty(m.product_id, loc)
-            debug.append((loc.display_name, qty))
-            seen.add(loc.id)
-
-        strategy = company.ecom_dynamic_strategy
-
-        # Build boutiques list = all listed locations EXCEPT central (maintain user's order)
-        boutiques = [l for l in locations if not central_loc or l.id != central_loc.id]
-
-        # --- Criterion 1: CENTRAL available covers all ---
-        if strategy == 'central_then_max_all_then_order' and central_loc:
-            if all(self._get_available_qty(m.product_id, central_loc) >= m.product_uom_qty for m in lines):
-                return central_loc, "Critère 1 (DISPONIBLE): CENTRAL couvre toute la commande", debug
-
-        # --- Criterion 2: Max available among ALL boutiques ---
-        if strategy == 'central_then_max_all_then_order' and boutiques:
-            scored = [(l, self._score_location_for_picking(picking, l)) for l in boutiques]
-            if scored:
-                best = max(scored, key=lambda x: x[1])
-                if best[1] > 0:
-                    return best[0], f"Critère 2: Max dispo boutiques → {best[0].display_name} (score={best[1]})", debug
-
-        # --- Criterion 3: Strict order (from settings order) ---
-        # choose the first boutique that fully covers; if none covers, pick first and create restock later
-        for loc in boutiques:
-            if all(self._get_available_qty(m.product_id, loc) >= m.product_uom_qty for m in lines):
-                return loc, f"Critère 3: Ordre strict → {loc.display_name}", debug
-
-        # None covers: fallback to first boutique if exists (restock will be created)
-        if boutiques:
-            return boutiques[0], f"Critère 3: Ordre strict (aucune dispo) → {boutiques[0].display_name}", debug
-
-        # If nothing else, return None
-        return None, "", debug
-
-    # ----- Main hook -----
-    def _action_confirm(self):
-        res = super()._action_confirm()
-        for order in self:
-            company = order.company_id
-            website_limit = company.ecom_dynamic_website_id
-            if not order.website_id or (website_limit and order.website_id != website_limit):
-                continue
-
-            if company.ecom_dynamic_strategy == 'default_only':
-                continue
-
-            pickings = order.picking_ids
-            if not pickings:
-                continue
-
-            # Choose target leg: 3-step pick > 2-step pick > 1-step outgoing
-            target = None
-            for p in pickings:
-                if self._classify_delivery_step(p) == 'three_step_pick':
-                    target = p
+    def _find_best_location_central_then_max(self, picking, locations, available_qtys):
+        central_location = self.company_id.ecom_dynamic_source_location_ids.filtered(lambda l: 'Central' in l.name)
+        
+        # 1. Tente de couvrir intégralement avec l'emplacement Central
+        if central_location:
+            is_covering = True
+            for move in picking.move_ids_without_package:
+                required_qty = move.product_uom_qty
+                key = (move.product_id.id, central_location.id)
+                available_qty = available_qtys.get(key, 0.0)
+                if available_qty < required_qty:
+                    is_covering = False
                     break
-            if not target:
-                for p in pickings:
-                    if self._classify_delivery_step(p) == 'two_step_pick':
-                        target = p
-                        break
-            if not target:
-                target = pickings.filtered(lambda p: p.picking_type_code == 'outgoing')[:1]
+            if is_covering:
+                return central_location
+        
+        # 2. Cherche l'emplacement avec le max de dispo sur toutes les boutiques
+        best_location = self._find_best_location_max_dispo(picking, locations, available_qtys)
 
-            if not target:
-                continue
+        if best_location:
+            # Vérifier si cet emplacement couvre la commande
+            is_covering = True
+            for move in picking.move_ids_without_package:
+                required_qty = move.product_uom_qty
+                key = (move.product_id.id, best_location.id)
+                available_qty = available_qtys.get(key, 0.0)
+                if available_qty < required_qty:
+                    is_covering = False
+                    break
+            if is_covering:
+                return best_location
 
-            for picking in target:
-                chosen_loc, reason, debug_table = self._choose_location_for_picking(company, picking)
-                if not chosen_loc:
-                    continue
-                # If chosen location doesn't fully cover on available qty, create internal transfer
-                fully_covers = all(self._get_available_qty(m.product_id, chosen_loc) >= m.product_uom_qty
-                                   for m in picking.move_ids_without_package)
-                if not fully_covers:
-                    self._create_internal_transfer(chosen_loc, picking.move_ids_without_package)
-                    reason += " | Réassort interne créé (couverture incomplète)."
+        # 3. Si aucun ne couvre, prend le premier emplacement de la liste
+        if locations:
+            return locations[0]
+        
+        return None
+        
+    def _action_confirm(self, *args, **kwargs):
+        for order in self:
+            if order.picking_ids and order.company_id.ecom_dynamic_strategy != 'default':
+                # Récupère le bon de prélèvement qui est le bon de sortie
+                picking_to_modify = order.picking_ids.filtered(lambda p: p.picking_type_id.code == 'outgoing')
 
-                # Apply and log (plain text; V8.1 = picking only)
-                self._apply_source_location(picking, chosen_loc, reason, debug_table)
+                if picking_to_modify:
+                    locations_to_check = order.company_id.ecom_dynamic_source_location_ids
+                    strategy = order.company_id.ecom_dynamic_strategy
+                    new_source_location = order._find_best_location_for_strategy(picking_to_modify, locations_to_check, strategy)
+                    
+                    if new_source_location and new_source_location != picking_to_modify.location_id:
+                        picking_to_modify.location_id = new_source_location
+                        picking_to_modify.message_post(body=_("Source location automatically set to: %s by dynamic picking strategy: %s.") % (new_source_location.display_name, strategy))
+                    elif not new_source_location:
+                        picking_to_modify.message_post(body=_("Could not find a suitable source location based on dynamic picking strategy: %s. Default location is used.") % strategy)
 
-        return res
+        # Appel à la méthode parente après avoir effectué les modifications
+        return super(SaleOrder, self)._action_confirm(*args, **kwargs)
