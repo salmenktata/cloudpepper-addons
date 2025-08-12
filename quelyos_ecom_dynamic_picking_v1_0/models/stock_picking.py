@@ -19,11 +19,13 @@ class StockPicking(models.Model):
     def action_assign(self):
         res = super().action_assign()
         for rec in self:
-            # Sur un picking, on détermine la réservation via les moves/ move lines
-            reserved = any(m.reserved_availability > 0 for m in rec.move_ids_without_package)
-            reserved_qty = sum(rec.move_line_ids.mapped('product_uom_qty'))  # quantité effectivement réservée
+            # Réservé si au moins un move est 'assigned' ou 'partially_available'
+            reserved = any(m.state in ('assigned', 'partially_available') for m in rec.move_ids_without_package)
+            # Somme des quantités effectivement réservées sur les move lines
+            reserved_qty = sum(rec.move_line_ids.mapped('reserved_uom_qty') or [0.0])
             rec._quelyos_log_event("assign", {"reserved": reserved, "reserved_qty": reserved_qty})
         return res
+
 
     def button_validate(self):
         if self.env["ir.config_parameter"].sudo().get_param("quelyos_ecom_dynamic_picking.strict_order"):
@@ -175,7 +177,7 @@ class StockPicking(models.Model):
                 self.message_post(body=f"🚚 Réassort interne créé automatiquement : <b>{replenish.name}</b>")
                 created_replenish = True
         
-        # Tenter une réservation immédiate après changement de source
+        # Tentative de réservation immédiate après changement de source
         try:
             self.action_assign()
         except Exception as e:
