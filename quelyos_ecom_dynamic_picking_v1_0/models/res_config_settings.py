@@ -60,7 +60,7 @@ class ResConfigSettings(models.TransientModel):
             quelyos_dynamic_strategy=val_strategy,
             quelyos_dynamic_stock_basis=ICP.get_param('quelyos_dynamic_stock_basis', 'free'),
             quelyos_dynamic_only_website=ICP.get_param('quelyos_dynamic_only_website', 'False') == 'True',
-            quelyos_dynamic_central_location_id=int(ICP.get_param('quelyos_dynamic_central_location_id') or 0),
+            quelyos_dynamic_central_location_id=self.env['stock.location'].browse(int(ICP.get_param('quelyos_dynamic_central_location_id') or 0)),
             quelyos_dynamic_strict_order_enabled=ICP.get_param('quelyos_dynamic_strict_order_enabled', 'False') == 'True',
             quelyos_dynamic_shop_order_names=ICP.get_param('quelyos_dynamic_shop_order_names', '') or ''
         )
