@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <record id="view_picking_form_qelyos_dynamic_opt_v836" model="ir.ui.view">
+    <field name="name">stock.picking.form.qelyos.dynamic.opt.v836</field>
+    <field name="model">stock.picking</field>
+    <field name="inherit_id" ref="stock.view_picking_form"/>
+    <field name="arch" type="xml">
+      <xpath expr="//header" position="inside">
+        <field name="qelyos_dynamic_pick_mode" widget="badge" attrs="{'invisible': [('qelyos_dynamic_pick_mode','=',False)]}"/>
+      </xpath>
+    </field>
+  </record>
+</odoo>
