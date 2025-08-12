@@ -19,7 +19,10 @@ class StockPicking(models.Model):
     def action_assign(self):
         res = super().action_assign()
         for rec in self:
-            rec._quelyos_log_event("assign", {"reserved": bool(rec.reserved_move_line_ids)})
+            # Sur un picking, on détermine la réservation via les moves/ move lines
+            reserved = any(m.reserved_availability > 0 for m in rec.move_ids_without_package)
+            reserved_qty = sum(rec.move_line_ids.mapped('product_uom_qty'))  # quantité effectivement réservée
+            rec._quelyos_log_event("assign", {"reserved": reserved, "reserved_qty": reserved_qty})
         return res
 
     def button_validate(self):
@@ -171,6 +174,13 @@ class StockPicking(models.Model):
                 })
                 self.message_post(body=f"🚚 Réassort interne créé automatiquement : <b>{replenish.name}</b>")
                 created_replenish = True
+        
+        # Tenter une réservation immédiate après changement de source
+        try:
+            self.action_assign()
+        except Exception as e:
+            self._quelyos_log_event("assign_error", {"error": str(e)})
+
 
         self._quelyos_log_event("auto_source", {
             "strategy": strategy,
