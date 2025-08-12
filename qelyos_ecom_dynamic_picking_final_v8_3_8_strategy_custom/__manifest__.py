@@ -1,9 +1,9 @@
 {
-    'name': 'Qelyos Dynamic Picking (v8.3.9 — Strategy + Free Stock Param)',
+    'name': 'Quelyos Dynamic Picking (v8.3.9 — Strategy + Free Stock Param)',
     'version': '8.3.9',
     'summary': 'Dynamic picking strategy with free stock parameter',
-    'author': 'Qelyos',
-    'website': 'https://qelyos.com',
+    'author': 'Quelyos',
+    'website': 'https://quelyos.com',
     'category': 'Inventory',
     'depends': ['stock', 'sale_management'],
     'data': [
