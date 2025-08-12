@@ -1,4 +1,4 @@
-# cloudpepper-addons **synthèse fonctionnelle** claire et complète du module **Quelyos Dynamic Picking (v8.3.9)** :
+# **synthèse fonctionnelle** claire et complète du module **Quelyos Dynamic Picking (v8.3.9)** :
 
 ---
 
