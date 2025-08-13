@@ -1,4 +1,4 @@
-# Quelyos – Dynamic Picking (v2.0)
+# Quelyos – Dynamic Picking
 
 # 📌 Description
 Ce module Odoo automatise la sélection de l’emplacement source pour les livraisons sortantes (stock.picking). Il applique une stratégie intelligente et configurable pour trouver la meilleure source en fonction des stocks disponibles, tout en gérant la création de réassorts internes si nécessaire.
