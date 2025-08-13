@@ -76,15 +76,17 @@ class StockPicking(models.Model):
         all_product_ids = all_products.ids
         
         # --- NOUVEAU CODE D'OPTIMISATION ET DE SÉCURITÉ ---
-        # Verrouillage des enregistrements pour éviter les problèmes de concurrence.
-        # On verrouille les produits et les emplacements pour tous les pickings du recordset.
+        # Vérification si les listes d'IDs ne sont pas vides avant de lancer la requête SQL.
+        product_ids_to_lock = tuple(all_product_ids) if all_product_ids else (0,)
+        loc_ids_to_lock = tuple(all_locs.ids) if all_locs.ids else (0,)
+
         self.env.cr.execute("""
             SELECT id FROM product_product WHERE id IN %s FOR UPDATE
-        """, [tuple(all_product_ids)])
+        """, [product_ids_to_lock])
         
         self.env.cr.execute("""
             SELECT id FROM stock_location WHERE id IN %s FOR UPDATE
-        """, [tuple(all_locs.ids)])
+        """, [loc_ids_to_lock])
         
         stock_data = self._get_available_quantities(all_product_ids, all_locs.ids, basis)
         # --- FIN DU NOUVEAU CODE D'OPTIMISATION ET DE SÉCURITÉ ---
@@ -284,4 +286,4 @@ class SaleOrder(models.Model):
         res = super()._action_confirm()
         pickings = self.mapped("picking_ids").filtered(lambda p: p.picking_type_id.code == "outgoing")
         pickings._quelyos_apply_auto_source_strategy()
-        return res
+        return 
