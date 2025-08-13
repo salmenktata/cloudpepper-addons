@@ -86,21 +86,21 @@
     <!-- Création des journaux de caisse pour chaque PoS -->
     <record id="pos_cash_journal_soukra" model="account.journal">
         <field name="name">PoS Cash - Soukra</field>
-        <field name="code">POSCS</field>
+        <field name="code">POSCashSK</field>
         <field name="type">cash</field>
         <field name="company_id" ref="base.main_company"/>
     </record>
     
     <record id="pos_cash_journal_sousse" model="account.journal">
         <field name="name">PoS Cash - Sousse</field>
-        <field name="code">POSSS</field>
+        <field name="code">POSCashSS</field>
         <field name="type">cash</field>
         <field name="company_id" ref="base.main_company"/>
     </record>
     
     <record id="pos_cash_journal_gafsa" model="account.journal">
         <field name="name">PoS Cash - Gafsa</field>
-        <field name="code">POSG</field>
+        <field name="code">POSCashGF</field>
         <field name="type">cash</field>
         <field name="company_id" ref="base.main_company"/>
     </record>
