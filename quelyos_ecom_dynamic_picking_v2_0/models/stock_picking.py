@@ -43,6 +43,8 @@ class StockPicking(models.Model):
     def _quelyos_apply_auto_source_strategy(self):
         """
         Applique la stratégie de sélection de l'emplacement source pour les livraisons sortantes.
+        La nouvelle logique inclut une étape de "meilleure couverture" si aucun emplacement ne peut
+        satisfaire entièrement la commande.
         """
         P = self.env["ir.config_parameter"].sudo()
         
@@ -87,57 +89,70 @@ class StockPicking(models.Model):
                 self._log_event(picking, "skip", {"exp": "Aucun emplacement central ni boutique configuré"})
                 continue
 
-            all_loc_ids = [central.id] + shops.ids
+            all_locs = central + shops
+            all_loc_ids = all_locs.ids
             stock_data = self._get_available_quantities(list(req.keys()), all_loc_ids, basis)
             
-            def check_coverage(location):
+            def check_full_coverage(location):
                 return all(stock_data.get(location.id, {}).get(pid, 0.0) >= need for pid, need in req.items())
 
-            chosen_shop = self.env['stock.location']
             final_source = self.env['stock.location']
             strategie_appliquee = ""
 
-            central_ok = check_coverage(central) if central else False
-            
+            # Critère 1 : Le stock central couvre tout ?
+            central_ok = check_full_coverage(central) if central else False
             if central_ok:
                 final_source = central
                 strategie_appliquee = "central_complet"
             else:
+                # Critères 2 & 3 : Sélection de la meilleure boutique (ordre strict ou score)
+                best_shop = self.env['stock.location']
                 if strict_names_enabled and priority_names:
                     for name in priority_names:
                         shop = shops.filtered(lambda l: l.name.strip().lower() == name)
-                        if shop and check_coverage(shop):
-                            chosen_shop = shop
+                        if shop and check_full_coverage(shop):
+                            best_shop = shop
                             break
-                
-                if not chosen_shop:
-                    best_shop, best_score, best_tiebreak = False, -1.0, -1.0
-                    scores = {}
+                if not best_shop:
+                    best_score = -1.0
+                    best_tiebreak = -1.0
                     for shop in shops:
                         free_sum, cover_sum = 0.0, 0.0
                         for pid, need in req.items():
                             have = stock_data.get(shop.id, {}).get(pid, 0.0)
                             free_sum += have
                             cover_sum += max(0.0, min(have, need))
-                        scores[shop.id] = {"free_sum": free_sum, "cover_sum": cover_sum}
-                        
                         if (free_sum > best_score) or (free_sum == best_score and cover_sum > best_tiebreak):
                             best_score, best_tiebreak, best_shop = free_sum, cover_sum, shop
-                    
-                    chosen_shop = best_shop
-                    self._log_event(picking, "shop_scores", {"exp": "Scores de couverture des boutiques", "scores": scores})
-
-                if chosen_shop:
-                    final_source = chosen_shop
-                    strategie_appliquee = "meilleure_boutique_ou_ordre_strict"
+                
+                if best_shop and check_full_coverage(best_shop):
+                    final_source = best_shop
+                    strategie_appliquee = "meilleure_boutique_ou_ordre_strict_complet"
                 else:
-                    final_source = central or (shops and shops[:1])
-                    strategie_appliquee = "central_par_defaut" if central else "premier_disponible"
+                    # Nouvelle étape : Choix de la meilleure couverture
+                    best_coverage_loc = self.env['stock.location']
+                    best_coverage_score = -1.0
+                    for loc in all_locs:
+                        if not loc:
+                            continue
+                        current_coverage_score = sum(min(stock_data.get(loc.id, {}).get(pid, 0.0), need) for pid, need in req.items())
+                        if current_coverage_score > best_coverage_score:
+                            best_coverage_score = current_coverage_score
+                            best_coverage_loc = loc
+                    
+                    if best_coverage_loc:
+                        final_source = best_coverage_loc
+                        strategie_appliquee = "meilleure_couverture"
+                    else:
+                        # Fallback
+                        final_source = central or (shops and shops[:1])
+                        strategie_appliquee = "fallback"
 
             if not final_source:
                 self._log_event(picking, "fail", {"exp": "Impossible de déterminer une source"})
                 continue
 
+            # Application de la source et réassort
             self._apply_source_and_replenish(picking, final_source, central, req, stock_data, strategie_appliquee)
 
     def _apply_source_and_replenish(self, picking, final_source, central, req, stock_data, strategie_appliquee):
@@ -145,6 +160,7 @@ class StockPicking(models.Model):
         picking.move_ids_without_package.write({"location_id": final_source.id})
 
         created_replenish = False
+        # Le réassort est créé uniquement si la source n'est pas l'emplacement central
         if final_source and central and final_source.id != central.id:
             moves_data = []
             for pid, need in req.items():
