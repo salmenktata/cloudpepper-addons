@@ -13,7 +13,6 @@ incluant les emplacements de stock, les types d'opérations et les paramètres p
     'depends': ['quelyos_ecom_dynamic_picking', 'sale_management', 'point_of_sale', 'account'],
     'data': [
         'data/quelyos_config_data.xml',
-        'data/sale_config_data.xml',
     ],
     'installable': True,
     'auto_install': False,
