@@ -41,7 +41,7 @@ class StockPicking(models.Model):
     def _quelyos_apply_auto_source_strategy(self):
         """
         Applique la stratégie de sélection de l'emplacement source pour les livraisons sortantes
-        de manière optimisée en traitant les commandes en masse.
+        de manière optimisée et rapide, sans verrouillage de la base de données.
         """
         # Récupération des paramètres en dehors de la boucle
         P = self.env["ir.config_parameter"].sudo()
@@ -75,21 +75,7 @@ class StockPicking(models.Model):
         all_products = self.move_ids_without_package.product_id
         all_product_ids = all_products.ids
         
-        # --- NOUVEAU CODE D'OPTIMISATION ET DE SÉCURITÉ ---
-        # Vérification si les listes d'IDs ne sont pas vides avant de lancer la requête SQL.
-        product_ids_to_lock = tuple(all_product_ids) if all_product_ids else (0,)
-        loc_ids_to_lock = tuple(all_locs.ids) if all_locs.ids else (0,)
-
-        self.env.cr.execute("""
-            SELECT id FROM product_product WHERE id IN %s FOR UPDATE
-        """, [product_ids_to_lock])
-        
-        self.env.cr.execute("""
-            SELECT id FROM stock_location WHERE id IN %s FOR UPDATE
-        """, [loc_ids_to_lock])
-        
         stock_data = self._get_available_quantities(all_product_ids, all_locs.ids, basis)
-        # --- FIN DU NOUVEAU CODE D'OPTIMISATION ET DE SÉCURITÉ ---
 
         final_sources = {}
         replenish_data = defaultdict(list)
@@ -286,4 +272,4 @@ class SaleOrder(models.Model):
         res = super()._action_confirm()
         pickings = self.mapped("picking_ids").filtered(lambda p: p.picking_type_id.code == "outgoing")
         pickings._quelyos_apply_auto_source_strategy()
-        return 
+        return res
