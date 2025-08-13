@@ -5,6 +5,13 @@ from odoo import models, fields
 class ResCompany(models.Model):
     _inherit = 'res.company'
 
+    # Permet d'activer/désactiver la fonction depuis Paramètres > Vente
+    quelyos_dynamic_enabled = fields.Boolean(
+        string="Activer le picking dynamique Quelyos",
+        related="company_id.quelyos_dynamic_enabled",
+        readonly=False
+    )
+    
     # Activer/désactiver la logique (si besoin d’un ON/OFF global)
     quelyos_dynamic_enabled = fields.Boolean(
         string="Activer le picking dynamique",

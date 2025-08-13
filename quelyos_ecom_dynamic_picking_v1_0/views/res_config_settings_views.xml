@@ -12,6 +12,15 @@
                  string="Qelyos – Picking dynamique"
                  help="Active la sélection automatique de l’emplacement source pour les livraisons sortantes, avec réassort interne si nécessaire.">
 
+          <!-- (Nouveau) Interrupteur global société -->
+          <div class="o_form_label">Activation (société)</div>
+          <div class="content-group">
+            <field name="quelyos_dynamic_enabled"/>
+            <div class="text-muted">
+              exp : cochez pour activer le picking dynamique Quelyos pour cette société.
+            </div>
+          </div>
+
           <!-- ON/OFF global -->
           <div class="o_form_label">
             Activation
