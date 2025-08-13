@@ -6,20 +6,31 @@
     <field name="inherit_id" ref="sale.res_config_settings_view_form"/>
     <field name="arch" type="xml">
 
-      <!-- Insertion après la section "delivery" -->
+      <!-- On insère notre bloc juste après l’option "delivery" dans l’onglet Expédition -->
       <xpath expr="//setting[@id='delivery']" position="after">
         <setting id="quelyos_dynamic_picking"
                  string="Qelyos – Picking dynamique"
                  help="Active la sélection automatique de l’emplacement source pour les livraisons sortantes, avec réassort interne si nécessaire.">
 
-          <!-- Stratégie appliquée -->
+          <!-- ON/OFF global -->
           <div class="o_form_label">
-            Stratégie appliquée
+            Activation
+          </div>
+          <div class="content-group">
+            <field name="quelyos_dynamic_enabled"/>
+            <div class="text-muted">
+              exp : décochez pour désactiver temporairement le picking dynamique.
+            </div>
+          </div>
+
+          <!-- Type de stock utilisé -->
+          <div class="o_form_label mt16">
+            Type de stock utilisé (base de calcul)
           </div>
           <div class="content-group">
             <field name="quelyos_dynamic_stock_basis"/>
             <div class="text-muted">
-              exp : « Quantité libre » = stock physique − réservations ; « Prévisionnel » inclut les entrées à venir.
+              exp : « Quantité libre » = stock physique − réservations ; « Prévisionnel » inclut les entrées confirmées.
             </div>
           </div>
 
@@ -36,23 +47,23 @@
 
           <!-- Emplacement central -->
           <div class="o_form_label mt16">
-            Emplacement central (CENT/Stock)
+            Emplacement central (Critère 1)
           </div>
           <div class="content-group">
             <field name="quelyos_dynamic_central_location_id" options="{'no_create_edit': False}"/>
             <div class="text-muted">
-              exp : Choisissez l’emplacement central prioritaire si son stock couvre toute la commande.
+              exp : si cet emplacement couvre toute la commande, il est choisi pour toutes les lignes.
             </div>
           </div>
 
-          <!-- Boutiques à considérer -->
+          <!-- Boutiques (Critère 2 & 3) -->
           <div class="o_form_label mt16">
-            Boutiques à considérer (ordre de priorité)
+            Boutiques à considérer (Critères 2 &amp; 3)
           </div>
           <div class="content-group">
             <field name="quelyos_dynamic_shop_ids" widget="many2many_tags" options="{'no_create_edit': False}"/>
             <div class="text-muted">
-              exp : ex : Gafsa/Stock, Sousse/Stock, Soukra/Stock. L’ordre choisi ici détermine la priorité dans le critère 3.
+              exp : l’ordre d’ajout sera utilisé pour le **Critère 3** (priorité stricte si le critère 2 ne couvre pas).
             </div>
           </div>
 

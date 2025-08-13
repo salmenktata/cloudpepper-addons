@@ -1,89 +1,79 @@
-# Qelyos – Dynamic Picking (v1.0)
+# Quelyos – Dynamic Picking (v1.0 - Strategy Free Param)
 
-## 📌 Objectif du module
-Automatiser le choix de l’emplacement source pour les livraisons sortantes (pickings) en appliquant une **stratégie de sélection intelligente** basée sur les stocks disponibles, tout en déclenchant automatiquement un réassort interne si nécessaire.
+## 📌 Description
+Ce module Odoo permet de **sélectionner automatiquement** l’emplacement source pour les livraisons sortantes (`stock.picking`) en appliquant une stratégie intelligente basée sur les stocks disponibles et un ordre de priorité configurable.  
+Il gère également la création **automatique de réassorts internes** si nécessaire.
+
+Compatible avec **Odoo 18 Community & Enterprise**.
 
 ---
 
 ## 🚀 Fonctionnalités principales
-
-### 1️⃣ Sélection automatique de l’emplacement source
-Lorsqu’un picking sortant est créé, le module évalue tous les emplacements configurés (**CENT/Stock** et les boutiques) et applique la stratégie définie dans la configuration.
-
-**Stratégie “Critères personnalisés” :**
-1. **Critère 1** – Si **CENT/Stock** a assez de stock libre pour toutes les lignes → on prend CENT comme source pour tout.
-2. **Critère 2** – Sinon, choisir la boutique avec **le maximum de stock libre cumulé** (hors CENT), réserver ce qui est dispo et déclencher un **réassort interne** depuis CENT vers cette boutique pour compléter les manquants.
-3. **Critère 3 – Ordre strict** (optionnel) – Tester les boutiques dans l’ordre `Gafsa → Sousse → Soukra` et choisir la première qui couvre toute la commande.
-
----
-
-### 2️⃣ Calcul basé sur différents types de stock
-- **Quantité libre (par défaut)** → Physique - Réservé  
-- **Physique (On-Hand)** → Quantité physique réelle  
-- **Prévisionnel (Forecast)** → Stock disponible après mouvements confirmés
+- **Critère 1** : utiliser l’**emplacement central** si son stock couvre **toute la commande**.
+- **Critère 2** : sinon, sélectionner la **boutique** qui couvre **le plus d’articles** de la commande (maximum de couverture cumulée).
+- **Critère 3** : sinon, tester les **boutiques dans l’ordre d’ajout** (défini dans les paramètres) et prendre la première qui couvre tout.
+- **Sinon** : déclencher un **réassort interne** du **central → boutique choisie** pour les articles manquants.
+- Paramétrage complet depuis **Paramètres > Ventes** :
+  - Activation/désactivation du picking dynamique.
+  - Choix du **type de stock** utilisé pour le calcul :  
+    - `Quantité libre` (stock physique – réservé)  
+    - `Physique (On-Hand)`  
+    - `Prévisionnel` (inclut les entrées confirmées)
+  - Limitation aux **commandes eCommerce** (optionnel).
+  - Sélection de l’**emplacement central** (Critère 1).
+  - Sélection des **boutiques à considérer** (ordre d’ajout appliqué au Critère 3).
 
 ---
 
-### 3️⃣ Réassort interne automatique
-Si la source choisie ne couvre pas tout :
-- Création d’un picking interne **CENT/Stock → Boutique choisie**
-- Quantité transférée = **manquant** pour chaque ligne
-- Picking interne créé en **état "À traiter"**
+## 🛠 Installation
+1. Copier le dossier du module `quelyos_ecom_dynamic_picking_v1_0` dans votre répertoire `addons` ou `extra-addons`.
+2. Redémarrer le serveur Odoo.
+3. Activer le mode développeur si besoin.
+4. Aller dans **Applications** et rechercher **"Quelyos – Dynamic Picking"**.
+5. Installer le module.
 
 ---
 
-### 4️⃣ Paramétrage flexible
-Dans **Paramètres > Inventaire > Qelyos – Dynamic Picking** :
-- **Stratégie appliquée** : Critères personnalisés ou Désactivé
-- **Type de stock** : Libre / Physique / Prévisionnel
-- **Boutiques à considérer**
-- **Ordre strict activable**
-- **Application uniquement aux commandes eCommerce**
+## ⚙ Configuration
+1. Aller dans **Paramètres > Ventes**.
+2. Trouver la section **"Qelyos – Picking dynamique"** (juste après "Livraison").
+3. Configurer :
+   - **Activer le picking dynamique**.
+   - **Type de stock** : libre, physique ou prévisionnel.
+   - **Appliquer uniquement eCommerce** : oui/non.
+   - **Emplacement central** : choisir le stock prioritaire (ex : `CENT/Stock`).
+   - **Boutiques à considérer** : sélectionner et **ordonner l’ajout** (l’ordre sera utilisé pour le Critère 3).
 
 ---
 
-### 5️⃣ Points forts
-- 🚫 Évite les ruptures : priorité à l’entrepôt central si complet
-- 🔄 Automatisation du réassort interne
-- ⚙️ Paramétrable selon besoin
-- 📝 Logs clairs dans le chatter
+## 🔄 Logique détaillée
+
+**Lors de la confirmation d’un transfert sortant** :
+1. **Critère 1** : vérifier si l’emplacement central couvre **toute la commande**.
+2. Si non, **Critère 2** : calculer la couverture cumulée de chaque boutique → prendre celle avec le **maximum**.
+3. Si encore non satisfaisant, **Critère 3** : tester les boutiques dans l’ordre défini dans la configuration → prendre la première qui couvre tout.
+4. Si aucun critère ne couvre la commande, créer un **réassort interne** du central vers la boutique qui a déjà le plus d’articles couverts.
 
 ---
 
-## 📥 Installation
-1. Copier le dossier `quelyos_ecom_dynamic_picking_v1_0` dans le répertoire `addons` d’Odoo.
-2. Mettre à jour la liste des applications.
-3. Installer **Qelyos – Dynamic Picking (v1.0)**.
+## 📄 Fichiers principaux
+- `models/stock_picking.py` : logique de sélection et réassort.
+- `models/res_config_settings.py` : paramètres stockés sur la société.
+- `views/res_config_settings_views.xml` : écran de configuration dans Paramètres > Ventes.
+- `views/stock_views.xml` : affichage du **log Qelyos** dans les transferts.
+- `security/ir.model.access.csv` : droits d’accès aux modèles du module.
 
 ---
 
-## ⚙️ Configuration
-1. Aller dans **Inventaire > Configuration > Paramètres** (onglet Expédition).
-2. Dans la section **Qelyos – Dynamic Picking** :
-   - Définir l’emplacement central.
-   - Choisir les boutiques à inclure.
-   - Sélectionner la stratégie et le type de stock.
-   - Activer ou non l’ordre strict.
-3. Sauvegarder.
+## 🧪 Tests recommandés
+1. **Test Critère 1** : stock central couvrant toute la commande → doit être sélectionné.
+2. **Test Critère 2** : central insuffisant, mais une boutique couvre le plus d’articles → doit être sélectionnée.
+3. **Test Critère 3** : aucun stock complet, tester l’ordre défini dans la config → doit prendre la première boutique valide.
+4. **Test Réassort** : aucun critère ne couvre → création d’un picking interne du central vers la boutique sélectionnée.
 
 ---
 
-## 💡 Exemple d’utilisation
-- **Commande client de 10 unités**
-- CENT/Stock → 6 unités
-- Boutique Sousse → 8 unités
-- Stratégie choisie : **Critères personnalisés**
-- Résultat :
-  - Source choisie : **Sousse**
-  - Réassort créé automatiquement : **CENT → Sousse (2 unités)**
+## 📌 Auteur
+- **Quelyos** – [https://quelyos.com](https://quelyos.com)
 
----
-
-## 🛠️ Compatibilité
-- Odoo **v18+**
-- Modules requis : `stock`, `sale_management`
-
----
-
-## 📄 Licence
-Ce module est distribué sous licence **LGPL-3.0**.
+Licence : **LGPL-3**
