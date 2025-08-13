@@ -61,7 +61,7 @@
             Boutiques à considérer
           </div>
           <div class="content-group">
-            <field name="quelyos_dynamic_shop_ids" widget="many2many_tags"/>
+           
             <div class="text-muted">
               exp : ex : Gafsa/Stock, Sousse/Stock, Soukra/Stock. Le calcul ne prend en compte que ces emplacements.
             </div>
