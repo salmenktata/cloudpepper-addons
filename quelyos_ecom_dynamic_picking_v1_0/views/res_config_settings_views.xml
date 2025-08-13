@@ -4,7 +4,7 @@
     <record id="view_res_config_settings_quelyos_dynamic" model="ir.ui.view">
         <field name="name">res.config.settings.quelyos.dynamic.form</field>
         <field name="model">res.config.settings</field>
-        <field name="inherit_id" ref="base.view_res_config_settings"/>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
         <field name="arch" type="xml">
 
             <!-- On insère dans l'onglet Vente -->
