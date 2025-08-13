@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Création de l'entrepôt central -->
-    <record id="warehouse_central" model="stock.warehouse">
+    <!-- Utiliser l'entrepôt par défaut d'Odoo et le configurer comme entrepôt central -->
+    <record id="stock.warehouse0" model="stock.warehouse">
         <field name="name">Entrepôt CENTRAL</field>
         <field name="code">CENT</field>
     </record>
 
-    <!-- Création des emplacements des boutiques (enfants de CENT/Stock) -->
+    <!-- Assurez-vous que l'emplacement de stock par défaut s'appelle bien 'CENT/Stock' -->
+    <record id="stock.stock_location_stock" model="stock.location">
+        <field name="name">CENT/Stock</field>
+    </record>
+
+    <!-- Création des emplacements des boutiques -->
     <record id="location_boutique_gafsa" model="stock.location">
         <field name="name">Boutique Gafsa</field>
         <field name="location_id" ref="stock.stock_location_stock"/>
@@ -27,7 +32,7 @@
         <field name="name">Réassort vers Gafsa</field>
         <field name="code">internal</field>
         <field name="sequence_code">REASSORT-TO-GAFSA</field>
-        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="warehouse_id" ref="stock.warehouse0"/>
         <field name="default_location_src_id" ref="stock.stock_location_stock"/>
         <field name="default_location_dest_id" ref="location_boutique_gafsa"/>
     </record>
@@ -36,7 +41,7 @@
         <field name="name">Réassort vers Sousse</field>
         <field name="code">internal</field>
         <field name="sequence_code">REASSORT-TO-SOUSSE</field>
-        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="warehouse_id" ref="stock.warehouse0"/>
         <field name="default_location_src_id" ref="stock.stock_location_stock"/>
         <field name="default_location_dest_id" ref="location_boutique_sousse"/>
     </record>
@@ -45,7 +50,7 @@
         <field name="name">Réassort vers Soukra</field>
         <field name="code">internal</field>
         <field name="sequence_code">REASSORT-TO-SOUKRA</field>
-        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="warehouse_id" ref="stock.warehouse0"/>
         <field name="default_location_src_id" ref="stock.stock_location_stock"/>
         <field name="default_location_dest_id" ref="location_boutique_soukra"/>
     </record>
@@ -55,7 +60,7 @@
         <field name="name">Expédition Web - Gafsa</field>
         <field name="code">outgoing</field>
         <field name="sequence_code">EXP-WEB-GAFSA</field>
-        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="warehouse_id" ref="stock.warehouse0"/>
         <field name="default_location_src_id" ref="location_boutique_gafsa"/>
         <field name="default_location_dest_id" ref="stock.stock_location_customers"/>
     </record>
@@ -64,7 +69,7 @@
         <field name="name">Expédition Web - Sousse</field>
         <field name="code">outgoing</field>
         <field name="sequence_code">EXP-WEB-SOUSSE</field>
-        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="warehouse_id" ref="stock.warehouse0"/>
         <field name="default_location_src_id" ref="location_boutique_sousse"/>
         <field name="default_location_dest_id" ref="stock.stock_location_customers"/>
     </record>
@@ -73,7 +78,7 @@
         <field name="name">Expédition Web - Soukra</field>
         <field name="code">outgoing</field>
         <field name="sequence_code">EXP-WEB-SOUKRA</field>
-        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="warehouse_id" ref="stock.warehouse0"/>
         <field name="default_location_src_id" ref="location_boutique_soukra"/>
         <field name="default_location_dest_id" ref="stock.stock_location_customers"/>
     </record>
