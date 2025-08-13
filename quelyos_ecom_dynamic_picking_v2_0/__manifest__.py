@@ -1,19 +1,24 @@
 # -*- coding: utf-8 -*-
-manifest = {
-    "name": "Quelyos - Dynamic Picking (v1.0)",
-    "summary": "Sélection automatique de la source + réassort interne (Quelyos)",
-    "version": "1.0",
-    "author": "Quelyos",
-    "website": "https://quelyos.example",
-    "category": "Inventory/Logistics",
-    "license": "LGPL-3",
-    "depends": [
-        "sale",
-        "stock"
+{
+    'name': "Quelyos - Dynamic Picking",
+    'version': '1.0',
+    'summary': "Sélection automatique de l'emplacement source pour les commandes eCommerce",
+    'description': """
+Ce module permet d'appliquer une stratégie dynamique pour déterminer automatiquement 
+l'emplacement source des livraisons selon des critères configurables :
+- Priorité au stock central si possible
+- Sinon meilleure boutique (stock libre max)
+- Réassort automatique si besoin
+    """,
+    'author': "Quelyos",
+    'website': "https://quelyos.com",
+    'category': 'Inventory/Inventory',
+    'depends': ['sale', 'stock'],
+    'data': [
+        'security/ir.model.access.csv',
+        'views/res_config_settings_views.xml',
     ],
-    "data": [
-        "views/res_config_settings_views.xml"
-    ],
-    "installable": true,
-    "application": false
+    'installable': True,
+    'application': False,
+    'license': 'LGPL-3',
 }
