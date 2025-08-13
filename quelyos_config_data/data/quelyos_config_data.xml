@@ -6,12 +6,12 @@
         <field name="code">CENT</field>
     </record>
 
-    <!-- Assurez-vous que l'emplacement de stock par défaut s'appelle bien 'CENT/Stock' -->
+    <!-- Renommer l'emplacement de stock par défaut pour éviter la redondance -->
     <record id="stock.stock_location_stock" model="stock.location">
-        <field name="name">CENT/Stock</field>
+        <field name="name">Stock</field>
     </record>
 
-    <!-- Création des emplacements des boutiques -->
+    <!-- Création des emplacements des boutiques (enfants de l'emplacement renommé) -->
     <record id="location_boutique_gafsa" model="stock.location">
         <field name="name">Boutique Gafsa</field>
         <field name="location_id" ref="stock.stock_location_stock"/>
