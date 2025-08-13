@@ -8,7 +8,8 @@
         <field name="arch" type="xml">
 
             <!-- On insère dans l'onglet Vente -->
-            <xpath expr="//div[@id='sales']" position="inside">
+            <xpath expr="//page[@string='Sales']" position="inside">
+
                 <div class="app_settings_block" data-string="Picking dynamique" string="Picking dynamique">
                     <h2>Picking dynamique – Paramétrage</h2>
                     <group>
