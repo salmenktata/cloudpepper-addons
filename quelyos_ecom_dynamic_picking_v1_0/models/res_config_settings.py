@@ -4,6 +4,13 @@ from odoo import models, fields, api
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
+    quelyos_dynamic_shop_ids = fields.Many2many(
+        'stock.location',
+        string="Boutiques à considérer (ordre = priorité)",
+        domain="[('usage', '=', 'internal')]",
+        config_parameter='quelyos_dynamic_picking.shop_ids'
+    )
+    
     quelyos_dynamic_strategy = fields.Selection([
         ('custom', 'Personnalisée'),
         ('default', 'Par défaut')

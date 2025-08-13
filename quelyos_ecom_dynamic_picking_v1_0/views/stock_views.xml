@@ -1,15 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+  <!-- Ajout d’un onglet "Qelyos – Journal" dans le formulaire des transferts -->
   <record id="view_picking_form_quelyos_log" model="ir.ui.view">
     <field name="name">stock.picking.form.quelyos.log</field>
     <field name="model">stock.picking</field>
     <field name="inherit_id" ref="stock.view_picking_form"/>
     <field name="arch" type="xml">
+
+      <!-- On ajoute une page dans le notebook principal du formulaire -->
       <xpath expr="//sheet/notebook" position="inside">
-        <page string="Quelyos Log">
-          <field name="quelyos_log" readonly="1" nolabel="1"/>
+        <page string="Qelyos – Journal">
+          <group>
+            <label for="quelyos_log" string="Journal des actions Qelyos"/>
+            <field name="quelyos_log" nolabel="1" readonly="1" widget="text" class="w-100" style="min-height: 240px;"/>
+            <div class="text-muted mt16">
+              exp : ce journal récapitule la stratégie utilisée (Critère 1/2/3/4), l’emplacement source choisi,
+              et les éventuels réassorts internes créés pour compléter la livraison.
+            </div>
+          </group>
         </page>
       </xpath>
+
     </field>
   </record>
 </odoo>
