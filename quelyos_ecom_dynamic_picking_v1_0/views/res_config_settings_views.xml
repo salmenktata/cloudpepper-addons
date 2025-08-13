@@ -6,68 +6,48 @@
     <field name="inherit_id" ref="sale.res_config_settings_view_form"/>
     <field name="arch" type="xml">
 
-      <!-- On insère notre bloc juste après l’option "delivery" existante -->
+      <!-- Insertion juste après l’option "delivery" (Onglet Vente > Expédition) -->
       <xpath expr="//setting[@id='delivery']" position="after">
         <setting id="quelyos_dynamic_picking"
-                 string="Qelyos – Picking dynamique"
+                 string="Quelyos – Picking dynamique"
                  help="Active la sélection automatique de l’emplacement source pour les livraisons sortantes, avec réassort interne si nécessaire.">
 
           <!-- Stratégie appliquée -->
-          <div class="o_form_label">
-            Stratégie appliquée
-          </div>
+          <div class="o_form_label">Stratégie appliquée</div>
           <div class="content-group">
             <field name="quelyos_dynamic_strategy"/>
             <div class="text-muted">
-              exp : « Critères personnalisés » vérifie d’abord CENT/Stock, sinon choisit la meilleure boutique, puis peut déclencher un réassort.
+              exp : « Personnalisée » applique : (1) CENT/Stock si tout est couvert, sinon (2) meilleur stock disponible, sinon (3) meilleur On‑Hand, sinon (4) magasin avec le plus d’articles de la commande (puis réassort).
             </div>
           </div>
 
-          <!-- Type de stock utilisé -->
-          <div class="o_form_label mt16">
-            Type de stock utilisé
-          </div>
+          <!-- Base de calcul du stock -->
+          <div class="o_form_label mt16">Base de calcul du stock</div>
           <div class="content-group">
             <field name="quelyos_dynamic_stock_basis"/>
             <div class="text-muted">
-              exp : Quantité libre = stock physique − réservations ; Prévisionnel = inclut les entrées à venir.
+              exp : Quantité libre = physique − réservé ; Prévisionnel = inclut les entrées confirmées.
             </div>
           </div>
 
-          <!-- Appliquer uniquement eCommerce -->
-          <div class="o_form_label mt16">
-            Portée
-          </div>
+          <!-- Portée eCommerce -->
+          <div class="o_form_label mt16">Portée</div>
           <div class="content-group">
             <field name="quelyos_dynamic_only_website"/>
             <div class="text-muted">
-              exp : si coché, la stratégie ne s’applique qu’aux commandes passées sur le site web.
+              exp : si coché, la stratégie s’applique uniquement aux commandes issues du site web.
             </div>
           </div>
 
           <!-- Emplacement central -->
-          <div class="o_form_label mt16">
-            Emplacement central (CENT/Stock)
-          </div>
+          <div class="o_form_label mt16">Emplacement central (CENT/Stock)</div>
           <div class="content-group">
-            <field name="quelyos_dynamic_central_location_id" options="{'no_create_edit': False}"/>
+            <field name="quelyos_dynamic_central_location_id" options="{'no_create': True}"/>
             <div class="text-muted">
-              exp : choisissez l’emplacement central prioritaire si son stock couvre toute la commande.
+              exp : sélectionnez l’emplacement central privilégié pour le Critère 1.
             </div>
           </div>
 
-          <!-- Boutiques à considérer -->
-          <div class="o_form_label mt16">
-            Boutiques à considérer
-          </div>
-          <div class="content-group">
-           
-            <div class="text-muted">
-              exp : ex : Gafsa/Stock, Sousse/Stock, Soukra/Stock. Le calcul ne prend en compte que ces emplacements.
-            </div>
-          </div>
-
-          
         </setting>
       </xpath>
 
