@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
-from odoo import models, api
+from odoo import models, api, fields
 from odoo.exceptions import UserError
 
 class StockPicking(models.Model):
     _inherit = 'stock.picking'
+    
+    quelyos_log = fields.Text(
+        string="Log Qelyos",
+        help="Trace interne des actions de la stratégie de picking."
+    )
 
     @api.model
     def _quelyos_log_event(self, action, extra=None):
