@@ -4,7 +4,6 @@ from odoo import models, fields, api
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
-    # --- Champs de configuration (affichés en FR) ---
     quelyos_dynamic_strategy = fields.Selection([
         ('custom', 'Critères personnalisés'),
         ('disabled', 'Désactivé')
@@ -41,13 +40,11 @@ class ResConfigSettings(models.TransientModel):
         help="exp : séparez par '>' (ex: Gafsa>Sousse>Soukra)."
     )
 
-    # ====== Chargement ======
     @api.model
     def get_values(self):
         res = super(ResConfigSettings, self).get_values()
         ICP = self.env['ir.config_parameter'].sudo()
 
-        # sécurise la stratégie
         val = ICP.get_param('quelyos_dynamic_strategy', 'custom')
         if val not in ('custom', 'disabled'):
             val = 'custom'
@@ -71,12 +68,10 @@ class ResConfigSettings(models.TransientModel):
         )
         return res
 
-    # ====== Sauvegarde ======
     def set_values(self):
         super().set_values()
         ICP = self.env['ir.config_parameter'].sudo()
 
-        # Nettoyage et validation des données avant la sauvegarde
         strategy = self.quelyos_dynamic_strategy if self.quelyos_dynamic_strategy in ('custom', 'disabled') else 'custom'
         basis = self.quelyos_dynamic_stock_basis if self.quelyos_dynamic_stock_basis in ('free', 'onhand', 'forecast') else 'free'
         

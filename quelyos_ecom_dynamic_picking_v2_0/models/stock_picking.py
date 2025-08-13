@@ -53,7 +53,6 @@ class StockPicking(models.Model):
         if strategy != "custom":
             return
 
-        # Récupération des paramètres de configuration
         only_web = _get_param("only_website", 'False') in ('1', 'True', 'true')
         basis = _get_param("stock_basis", "free")
         central_id = int(_get_param("central_location_id", '0') or '0')
@@ -75,7 +74,6 @@ class StockPicking(models.Model):
 
             self._log_event(picking, "start_strategy", {"exp": "Début de la stratégie de sélection de la source"})
 
-            # Besoins par produit
             req = {
                 move.product_id.id: move.product_uom._compute_quantity(move.product_uom_qty, move.product_id.uom_id)
                 for move in picking.move_ids_without_package
@@ -89,7 +87,6 @@ class StockPicking(models.Model):
                 self._log_event(picking, "skip", {"exp": "Aucun emplacement central ni boutique configuré"})
                 continue
 
-            # Performance: pré-calculer le stock pour tous les produits et emplacements
             all_loc_ids = [central.id] + shops.ids
             stock_data = self._get_available_quantities(list(req.keys()), all_loc_ids, basis)
             
@@ -100,14 +97,12 @@ class StockPicking(models.Model):
             final_source = self.env['stock.location']
             strategie_appliquee = ""
 
-            # Critère 1 : Le stock central couvre tout ?
             central_ok = check_coverage(central) if central else False
             
             if central_ok:
                 final_source = central
                 strategie_appliquee = "central_complet"
             else:
-                # Critère 2 & 3 : Sélection de la meilleure boutique
                 if strict_names_enabled and priority_names:
                     for name in priority_names:
                         shop = shops.filtered(lambda l: l.name.strip().lower() == name)
@@ -143,7 +138,6 @@ class StockPicking(models.Model):
                 self._log_event(picking, "fail", {"exp": "Impossible de déterminer une source"})
                 continue
 
-            # Application de la source et réassort
             self._apply_source_and_replenish(picking, final_source, central, req, stock_data, strategie_appliquee)
 
     def _apply_source_and_replenish(self, picking, final_source, central, req, stock_data, strategie_appliquee):
@@ -213,7 +207,7 @@ class StockPicking(models.Model):
         if basis == "free":
             quants = self.env["stock.quant"].sudo().read_group(
                 domain=[("product_id", "in", product_ids), ("location_id", "child_of", location_ids)],
-                fields=["quantity:sum", "reserved_quantity:sum", "location_id"],
+                fields=["quantity:sum", "reserved_quantity:sum", "location_id", "product_id"],
                 groupby=["location_id", "product_id"],
             )
             for quant in quants:
@@ -222,7 +216,6 @@ class StockPicking(models.Model):
                 available_qty = quant['quantity'] - quant['reserved_quantity']
                 res[loc_id][prod_id] = max(0.0, available_qty)
         else:
-            # Fallback for onhand/forecast, can be optimized further
             for loc_id in location_ids:
                 if not loc_id:
                     continue
