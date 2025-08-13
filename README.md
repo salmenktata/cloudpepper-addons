@@ -1,35 +1,33 @@
 Quelyos – Dynamic Picking (v2.0)
 📌 Description
-Ce module Odoo automatise la sélection de l’emplacement source pour les livraisons sortantes (stock.picking). Il applique une stratégie intelligente et configurable pour trouver la meilleure source en fonction des stocks disponibles, tout en gérant la création de réassorts internes si nécessaire.
+Ce module Odoo automatise la sélection de l’emplacement source pour les livraisons sortantes (stock.picking) en appliquant une stratégie intelligente et hautement configurable, basée sur un système de règles dynamiques.
 
-Ce module est compatible avec Odoo 18 Community & Enterprise.
+Il gère également la création automatique de réassorts internes si nécessaire.
+
+Compatible avec Odoo 18 Community & Enterprise.
 
 🚀 Fonctionnalités principales
-Stratégie de sélection dynamique et hiérarchisée : Le module évalue les emplacements selon l'ordre de priorité suivant :
+Ce module remplace la logique de sélection en cascade par un moteur de règles puissant et flexible, permettant de :
 
-Priorité 1 : L’emplacement central est sélectionné s’il peut couvrir toute la commande.
+Définir des règles de sélection : Créez des règles avec des conditions et des actions spécifiques pour déterminer l'emplacement source.
 
-Priorité 2 : Sinon, si l’ordre strict est activé, la première boutique de la liste qui peut couvrir la commande est choisie.
+Prioriser les règles : Chaque règle possède une séquence qui définit son ordre d'évaluation. La première règle qui s'applique à une commande est utilisée.
 
-Priorité 3 : Si l’ordre strict est désactivé, la meilleure boutique (avec le score de stock disponible le plus élevé) est sélectionnée si elle peut couvrir la commande.
+Surcharger la stratégie : Les règles peuvent être spécifiques à une catégorie de produits, permettant une gestion fine de la logistique.
 
-Priorité 4 (Nouvelle) : Si aucun emplacement ne peut couvrir la commande en entier, le module sélectionne l'emplacement (parmi le central et les boutiques) qui offre la meilleure couverture pour l'ensemble des articles commandés.
+Stratégies disponibles par règle :
 
-Réassort interne automatique : Si l'emplacement source sélectionné n'est pas l'emplacement central, un bon de réassort interne est automatiquement créé pour transférer le stock manquant de l'emplacement central vers l'emplacement choisi.
+Priorité au central : Choisit un emplacement central s'il peut couvrir toute la commande.
 
-Paramétrage complet depuis Paramètres > Ventes :
+Ordre strict : Choisit la première boutique dans un ordre prédéfini qui peut couvrir la commande.
 
-Activation/désactivation de la stratégie de picking.
+Meilleure couverture : Sélectionne l'emplacement offrant la meilleure couverture de la commande, basé sur un score pondéré.
 
-Choix du type de stock utilisé pour le calcul : Quantité libre, Physique (On-Hand) ou Prévisionnel.
+Réassort interne automatique : Si l'emplacement source choisi n'est pas le central, un bon de réassort est créé automatiquement pour transférer le stock manquant.
 
-Limitation de la stratégie aux commandes eCommerce.
+Paramètres de pondération : Pour les règles de "meilleure couverture", définissez le poids de la couverture de stock par rapport à la disponibilité générale du stock.
 
-Sélection de l’emplacement central.
-
-Définition de la liste des boutiques à considérer.
-
-Activation de l’ordre strict et spécification de la liste ordonnée des boutiques (Gafsa>Sousse>Soukra).
+Interface intuitive : Gérez toutes les règles depuis un menu dédié dans Odoo, avec des vues Tree et Kanban pour faciliter l'organisation par glisser-déposer.
 
 🛠 Installation
 Copier le dossier du module quelyos_ecom_dynamic_picking_v2_0 dans votre répertoire addons ou extra-addons.
@@ -43,16 +41,22 @@ Aller dans Applications et rechercher "Quelyos – Dynamic Picking".
 Installer le module.
 
 ⚙ Configuration
-Aller dans Paramètres > Ventes.
+Allez dans Inventaire > Configuration > Magasin et trouvez le nouveau menu "Règles de Picking Dynamique".
 
-Dans la section "Quelyos – Dynamic Picking", configurer les options souhaitées.
+Créez vos règles en leur donnant un nom, une séquence, et un type.
+
+Dans Paramètres > Ventes, trouvez la section "Quelyos – Dynamic Picking" pour activer ou désactiver la stratégie globale et gérer l'application aux commandes eCommerce.
 
 📄 Fichiers principaux
-models/stock_picking.py : Contient la logique principale de sélection et de réassort.
+models/quelyos_dynamic_picking_rule.py : Nouveau modèle pour la définition des règles.
 
-models/res_config_settings.py : Gère les paramètres de configuration.
+models/stock_picking.py : Contient la logique principale qui évalue les règles.
 
-views/res_config_settings_views.xml : Définit l'interface de l'écran de configuration.
+models/res_config_settings.py : Ajout du bouton de gestion des règles.
+
+views/quelyos_dynamic_picking_rule_views.xml : Vues pour gérer les règles.
+
+views/res_config_settings_views.xml : Mise à jour de l'écran de configuration.
 
 📌 Auteur
 Quelyos – https://quelyos.com
