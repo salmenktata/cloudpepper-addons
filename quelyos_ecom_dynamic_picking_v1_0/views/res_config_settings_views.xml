@@ -1,41 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Formulaire de configuration : Picking dynamique -->
-    <record id="view_res_config_settings_quelyos_dynamic" model="ir.ui.view">
-        <field name="name">res.config.settings.quelyos.dynamic.form</field>
-        <field name="model">res.config.settings</field>
-        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
-        <field name="arch" type="xml">
+  <record id="view_quelyos_dynamic_picking_sales_settings" model="ir.ui.view">
+    <field name="name">quelyos.dynamic.picking.sales.settings</field>
+    <field name="model">res.config.settings</field>
+    <!-- ⚠️ On hérite de la vue de configuration Ventes -->
+    <field name="inherit_id" ref="sale.res_config_settings_view_form"/>
+    <field name="arch" type="xml">
 
-            <!-- On insère dans l'onglet Vente -->
-            <xpath expr="//page[@string='Sales']" position="inside">
+      <!-- ✅ On s’insère DANS le bloc Shipping existant -->
+      <xpath expr="//block[@name='sale_shipping_setting_container']" position="inside">
+        <setting id="quelyos_dynamic_picking"
+                 string="Quelyos – Picking dynamique"
+                 help="Active la sélection automatique de l’emplacement source pour les livraisons sortantes, avec réassort interne si nécessaire.">
 
-                <div class="app_settings_block" data-string="Picking dynamique" string="Picking dynamique">
-                    <h2>Picking dynamique – Paramétrage</h2>
-                    <group>
-                        <field name="quelyos_dynamic_enabled"/>
-                        <field name="quelyos_dynamic_only_website"/>
-                    </group>
+          <!-- Stratégie appliquée -->
+          <div class="o_form_label">Stratégie appliquée</div>
+          <div class="content-group">
+            <field name="quelyos_dynamic_strategy"/>
+            <div class="text-muted">
+              exp : « Critères personnalisés » vérifie d’abord CENT/Stock, sinon choisit la meilleure boutique, puis déclenche un réassort si nécessaire.
+            </div>
+          </div>
 
-                    <group string="Stratégie">
-                        <field name="quelyos_dynamic_strategy"/>
-                        <field name="quelyos_dynamic_stock_basis"/>
-                        <field name="quelyos_dynamic_central_location_id"
-                               options="{'no_create': True, 'no_open': True}"/>
-                        <field name="quelyos_dynamic_shop_ids"
-                               widget="many2many_tags"
-                               options="{'no_create': True, 'no_open': True}"
-                               context="{'default_usage': 'internal'}"
-                               placeholder="Sélectionnez les boutiques à inclure"/>
-                    </group>
+          <!-- Type de stock -->
+          <div class="o_form_label mt16">Type de stock utilisé</div>
+          <div class="content-group">
+            <field name="quelyos_dynamic_stock_basis"/>
+            <div class="text-muted">
+              exp : Quantité libre = stock physique − réservations ; Physique = stock réel ; Prévisionnel = inclut les entrées confirmées.
+            </div>
+          </div>
 
-                    <p class="o_form_label_help">
-                        <b>Critère 1 :</b> utiliser l’emplacement central si tout le stock est couvert.<br/>
-                        <b>Critère 2 :</b> utiliser la boutique avec le plus de stock cumulé.<br/>
-                        <b>Critère 3 :</b> utiliser les boutiques dans l’ordre indiqué ci-dessus.
-                    </p>
-                </div>
-            </xpath>
-        </field>
-    </record>
+          <!-- Portée -->
+          <div class="o_form_label mt16">Portée</div>
+          <div class="content-group">
+            <field name="quelyos_dynamic_only_website"/>
+            <div class="text-muted">
+              exp : si coché, la stratégie ne s’applique qu’aux commandes issues du site web.
+            </div>
+          </div>
+
+          <!-- Emplacement central -->
+          <div class="o_form_label mt16">Emplacement central (CENT/Stock)</div>
+          <div class="content-group">
+            <field name="quelyos_dynamic_central_location_id" options="{'no_open': True}"/>
+            <div class="text-muted">
+              exp : l’emplacement principal prioritaire si son stock couvre toute la commande.
+            </div>
+          </div>
+
+          <!-- Boutiques (ordre = ordre d’ajout) -->
+          <div class="o_form_label mt16">Boutiques à considérer (ordre = ordre d’ajout)</div>
+          <div class="content-group">
+            <field name="quelyos_dynamic_shop_ids"
+                   widget="many2many_tags"
+                   options="{'no_open': True}"
+                   context="{'default_usage': 'internal'}"
+                   placeholder="Sélectionnez les boutiques à inclure"/>
+            <div class="text-muted">
+              exp : l’ordre d’ajout sera utilisé comme <i>Critère 3</i> si le central est insuffisant et qu’aucune boutique ne couvre 100%.
+            </div>
+          </div>
+
+        </setting>
+      </xpath>
+    </field>
+  </record>
 </odoo>

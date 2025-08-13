@@ -9,9 +9,9 @@
     "category": "Inventory/Inventory",
     "depends": ["stock", "sale_management", "website_sale"],
     "data": [
-        "security/ir.model.access.csv",
         "views/res_config_settings_views.xml",
-        "views/stock_views.xml"
+        "views/stock_views.xml",
+        "security/ir.model.access.csv",
     ],
     "installable": True,
     "application": False,
