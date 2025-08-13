@@ -83,10 +83,24 @@
         <field name="default_location_dest_id" ref="stock.stock_location_customers"/>
     </record>
 
-    <!-- Création d'un journal de caisse pour les points de vente -->
-    <record id="pos_cash_journal" model="account.journal">
-        <field name="name">PoS Cash</field>
-        <field name="code">POSC</field>
+    <!-- Création des journaux de caisse pour chaque PoS -->
+    <record id="pos_cash_journal_soukra" model="account.journal">
+        <field name="name">PoS Cash - Soukra</field>
+        <field name="code">POSCS</field>
+        <field name="type">cash</field>
+        <field name="company_id" ref="base.main_company"/>
+    </record>
+    
+    <record id="pos_cash_journal_sousse" model="account.journal">
+        <field name="name">PoS Cash - Sousse</field>
+        <field name="code">POSSS</field>
+        <field name="type">cash</field>
+        <field name="company_id" ref="base.main_company"/>
+    </record>
+    
+    <record id="pos_cash_journal_gafsa" model="account.journal">
+        <field name="name">PoS Cash - Gafsa</field>
+        <field name="code">POSG</field>
         <field name="type">cash</field>
         <field name="company_id" ref="base.main_company"/>
     </record>
@@ -95,8 +109,7 @@
     <record id="pos_config_soukra" model="pos.config">
         <field name="name">Boutique Soukra</field>
         <field name="picking_type_id" ref="picking_type_expedition_web_soukra"/>
-        <field name="journal_id" ref="pos_cash_journal"/>
-        <!-- Utilisation de warehouse_id au lieu de stock_location_id -->
+        <field name="journal_id" ref="pos_cash_journal_soukra"/>
         <field name="warehouse_id" ref="stock.warehouse0"/>
         <field name="iface_cashdrawer">True</field>
         <field name="iface_electronic_scale">True</field>
@@ -106,7 +119,7 @@
     <record id="pos_config_sousse" model="pos.config">
         <field name="name">Boutique Sousse</field>
         <field name="picking_type_id" ref="picking_type_expedition_web_sousse"/>
-        <field name="journal_id" ref="pos_cash_journal"/>
+        <field name="journal_id" ref="pos_cash_journal_sousse"/>
         <field name="warehouse_id" ref="stock.warehouse0"/>
         <field name="iface_cashdrawer">True</field>
         <field name="iface_electronic_scale">True</field>
@@ -116,7 +129,7 @@
     <record id="pos_config_gafsa" model="pos.config">
         <field name="name">Boutique Gafsa</field>
         <field name="picking_type_id" ref="picking_type_expedition_web_gafsa"/>
-        <field name="journal_id" ref="pos_cash_journal"/>
+        <field name="journal_id" ref="pos_cash_journal_gafsa"/>
         <field name="warehouse_id" ref="stock.warehouse0"/>
         <field name="iface_cashdrawer">True</field>
         <field name="iface_electronic_scale">True</field>
