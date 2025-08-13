@@ -4,10 +4,16 @@ from odoo import fields, models
 class ResCompany(models.Model):
     _inherit = "res.company"
 
-    # Active/désactive globalement la logique de picking dynamique pour la société
     quelyos_dynamic_enabled = fields.Boolean(
-        string="Activer le picking dynamique Quelyos",
+        string="Activer Picking Dynamique Qelyos",
         default=False,
-        help="Lorsque activé, la sélection automatique de l'emplacement source "
-             "et le réassort interne sont appliqués sur les livraisons sortantes."
+        help="Si coché, active la logique de picking dynamique pour cette société."
+    )
+
+    quelyos_dynamic_shop_ids = fields.Many2many(
+        'stock.location',
+        'res_company_quelyos_dynamic_shop_rel',
+        'company_id', 'location_id',
+        string="Boutiques à considérer",
+        help="Liste des boutiques à considérer pour le picking dynamique, l'ordre défini ici sera utilisé pour le critère 3."
     )
