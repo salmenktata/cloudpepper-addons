@@ -5,78 +5,72 @@ class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
     quelyos_dynamic_strategy = fields.Selection([
-        ('custom', 'Critères personnalisés (auto-sélection + réassort)'),
+        ('custom', 'Critères personnalisés'),
         ('disabled', 'Désactivé')
     ], string="Stratégie appliquée", default='custom',
-       help="Détermine la logique utilisée pour choisir automatiquement l'emplacement source des livraisons.")
+       help="Exp : 'Critères personnalisés' applique l'algorithme intelligent, "
+            "'Désactivé' désactive la sélection automatique.")
 
     quelyos_dynamic_stock_basis = fields.Selection([
-        ('free', 'Quantité libre (physique - réservé)'),
+        ('free', 'Quantité libre'),
         ('onhand', 'Physique (On-Hand)'),
-        ('forecast', 'Prévisionnel (inclut mouvements confirmés)')
+        ('forecast', 'Prévisionnel')
     ], string="Type de stock", default='free',
-       help="Base de calcul des disponibilités pour déterminer la source optimale.")
+       help="Exp : Choisit la base de calcul des stocks. "
+            "Quantité libre = Physique - Réservations, "
+            "Physique = quantité réelle, "
+            "Prévisionnel = prend en compte les entrées à venir.")
 
     quelyos_dynamic_only_website = fields.Boolean(
         string="Appliquer uniquement aux commandes eCommerce",
         default=False,
-        help="Si activé, la stratégie dynamique ne s'applique qu'aux commandes provenant du site web."
+        help="Exp : Si coché, la stratégie ne s'appliquera que pour les commandes issues du site eCommerce."
     )
 
     quelyos_dynamic_central_location_id = fields.Many2one(
-        'stock.location',
-        string="Emplacement central",
-        help="Entrepôt central à utiliser en priorité si le stock est suffisant."
+        'stock.location', string="Emplacement central",
+        help="Exp : L'entrepôt central utilisé en priorité (ex : CENT/Stock)."
     )
 
     quelyos_dynamic_shop_ids = fields.Many2many(
-        'stock.location',
-        string="Boutiques à considérer",
-        help="Liste des boutiques à inclure dans la recherche d'un emplacement source alternatif."
-    )
-
-    quelyos_dynamic_strict_order_enabled = fields.Boolean(
-        string="Activer l'ordre strict des boutiques",
-        help="Si activé, les boutiques sont testées dans l'ordre défini ci-dessous."
+        'stock.location', string="Boutiques à considérer",
+        help="Exp : Boutiques physiques prises en compte dans le calcul automatique."
     )
 
     quelyos_dynamic_shop_order_names = fields.Char(
-        string="Ordre des boutiques",
-        help="Ordre des boutiques séparées par des virgules (ex : Gafsa, Sousse, Soukra)."
+        string="Ordre des boutiques (Critère 3)",
+        default="Gafsa,Sousse,Soukra",
+        help="Exp : Ordre fixe utilisé à l'étape 3 si aucune source unique ne couvre toute la commande."
     )
 
-    # ====== Chargement des paramètres ======
+    # ====== Chargement ======
     @api.model
     def get_values(self):
         res = super().get_values()
         ICP = self.env['ir.config_parameter'].sudo()
 
-        # Stratégie
-        val_strategy = ICP.get_param('quelyos_dynamic_strategy', 'custom')
-        if val_strategy not in ('custom', 'disabled'):
-            val_strategy = 'custom'
+        # Fallback stratégie
+        val = ICP.get_param('quelyos_dynamic_strategy', 'custom')
+        if val not in ('custom', 'disabled'):
+            val = 'custom'
 
         res.update(
-            quelyos_dynamic_strategy=val_strategy,
+            quelyos_dynamic_strategy=val,
             quelyos_dynamic_stock_basis=ICP.get_param('quelyos_dynamic_stock_basis', 'free'),
             quelyos_dynamic_only_website=ICP.get_param('quelyos_dynamic_only_website', 'False') == 'True',
-            quelyos_dynamic_central_location_id=self.env['stock.location'].browse(int(ICP.get_param('quelyos_dynamic_central_location_id') or 0)),
-            quelyos_dynamic_strict_order_enabled=ICP.get_param('quelyos_dynamic_strict_order_enabled', 'False') == 'True',
-            quelyos_dynamic_shop_order_names=ICP.get_param('quelyos_dynamic_shop_order_names', '') or ''
+            quelyos_dynamic_central_location_id=int(ICP.get_param('quelyos_dynamic_central_location_id', 0)) or False,
+            quelyos_dynamic_shop_order_names=ICP.get_param('quelyos_dynamic_shop_order_names', 'Gafsa,Sousse,Soukra')
         )
 
-        # Boutiques
         shop_ids = ICP.get_param('quelyos_dynamic_shop_ids')
         if shop_ids:
-            res.update(
-                quelyos_dynamic_shop_ids=[(6, 0, list(map(int, shop_ids.split(','))))]
-            )
+            res.update(quelyos_dynamic_shop_ids=[(6, 0, list(map(int, shop_ids.split(','))))])
         else:
             res.update(quelyos_dynamic_shop_ids=False)
 
         return res
 
-    # ====== Sauvegarde des paramètres ======
+    # ====== Sauvegarde ======
     def set_values(self):
         super().set_values()
         ICP = self.env['ir.config_parameter'].sudo()
@@ -86,5 +80,4 @@ class ResConfigSettings(models.TransientModel):
         ICP.set_param('quelyos_dynamic_only_website', 'True' if self.quelyos_dynamic_only_website else 'False')
         ICP.set_param('quelyos_dynamic_central_location_id', self.quelyos_dynamic_central_location_id.id or 0)
         ICP.set_param('quelyos_dynamic_shop_ids', ','.join(map(str, self.quelyos_dynamic_shop_ids.ids)))
-        ICP.set_param('quelyos_dynamic_strict_order_enabled', 'True' if self.quelyos_dynamic_strict_order_enabled else 'False')
-        ICP.set_param('quelyos_dynamic_shop_order_names', self.quelyos_dynamic_shop_order_names or '')
+        ICP.set_param('quelyos_dynamic_shop_order_names', self.quelyos_dynamic_shop_order_names or 'Gafsa,Sousse,Soukra')
