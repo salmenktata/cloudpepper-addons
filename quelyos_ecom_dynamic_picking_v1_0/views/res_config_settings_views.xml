@@ -67,18 +67,7 @@
             </div>
           </div>
 
-          <!-- Ordre strict -->
-          <div class="o_form_label mt16">
-            Ordre strict des boutiques
-          </div>
-          <div class="content-group">
-            <field name="quelyos_dynamic_strict_order_enabled"/>
-            <field name="quelyos_dynamic_shop_order_names" placeholder="ex : Gafsa, Sousse, Soukra" class="ms-2"/>
-            <div class="text-muted">
-              exp : si activé, test dans l’ordre saisi et choisit la première boutique couvrant toute la commande.
-            </div>
-          </div>
-
+          
         </setting>
       </xpath>
 

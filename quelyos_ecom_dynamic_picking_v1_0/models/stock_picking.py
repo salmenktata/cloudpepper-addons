@@ -1,134 +1,110 @@
 # -*- coding: utf-8 -*-
-from odoo import models, api, fields
-from collections import defaultdict
+from odoo import models, api
+from odoo.exceptions import UserError
 
 class StockPicking(models.Model):
     _inherit = 'stock.picking'
 
-    # Lien vers les pickings de réassort créés
-    quelyos_reassort_picking_ids = fields.Many2many(
-        'stock.picking',
-        'quelyos_reassort_rel',       # table intermédiaire explicite
-        'picking_id',                 # clé source
-        'reassort_picking_id',        # clé cible
-        string="Pickings de réassort",
-        readonly=True
-    )
+    @api.model
+    def _quelyos_log_event(self, action, extra=None):
+        # Journalisation interne (désactivable si inutile)
+        _logger = self.env['ir.logging']
+        _logger.create({
+            'name': 'Quelyos Dynamic Picking',
+            'type': 'server',
+            'dbname': self._cr.dbname,
+            'level': 'info',
+            'message': f"Action {action} sur {self.name} - {extra}",
+            'path': 'quelyos_ecom_dynamic_picking',
+            'func': '_quelyos_log_event',
+            'line': '0',
+        })
 
-    # ===============================
-    # Surcharge de l’assignation auto
-    # ===============================
     def action_assign(self):
         res = super().action_assign()
-        for picking in self:
-            picking._quelyos_apply_auto_source_strategy()
+        for rec in self:
+            rec._quelyos_apply_auto_source_strategy()
         return res
 
-    # ========================================
-    # Application de la stratégie de picking
-    # ========================================
     def _quelyos_apply_auto_source_strategy(self):
         ICP = self.env['ir.config_parameter'].sudo()
-
         strategy = ICP.get_param('quelyos_dynamic_strategy', 'custom')
-        stock_basis = ICP.get_param('quelyos_dynamic_stock_basis', 'free')
         only_website = ICP.get_param('quelyos_dynamic_only_website', 'False') == 'True'
+        central_location_id = int(ICP.get_param('quelyos_dynamic_central_location_id', '0')) or False
 
-        if strategy != 'custom':
-            return
+        for picking in self:
+            if strategy != 'custom':
+                continue
 
-        # Critères appliqués dans l’ordre demandé :
-        # 1️⃣ Emplacement central
-        central_location_id = int(ICP.get_param('quelyos_dynamic_central_location_id', '0'))
-        # 2️⃣ Plus grande quantité disponible
-        # 3️⃣ Plus grande quantité physique
-        # 4️⃣ Magasin avec le plus de lignes déjà présentes dans la commande
+            if only_website and picking.sale_id and not picking.sale_id.website_id:
+                continue
 
-        # Récupération des lignes à réserver
-        for move in self.move_ids_without_package:
-            product = move.product_id
-            candidate_locations = self._quelyos_get_candidate_locations(product, stock_basis)
+            for move in picking.move_ids_without_package:
+                product = move.product_id
+                qty_needed = move.product_uom_qty
 
-            # Appliquer Critère 1
-            chosen_location = None
-            if central_location_id and central_location_id in candidate_locations:
-                chosen_location = central_location_id
+                # -------------------------
+                # Critère 1 : Emplacement central
+                # -------------------------
+                candidate_location = None
+                if central_location_id:
+                    qty_central = self._get_available_qty(product, central_location_id)
+                    if qty_central >= qty_needed:
+                        candidate_location = self.env['stock.location'].browse(central_location_id)
 
-            # Sinon Critère 2
-            if not chosen_location:
-                chosen_location = self._quelyos_pick_highest_qty(candidate_locations)
+                # -------------------------
+                # Critère 2 : Plus grande quantité disponible
+                # -------------------------
+                if not candidate_location:
+                    location_qties = self._get_all_location_quantities(product)
+                    if location_qties:
+                        candidate_location = max(location_qties, key=lambda x: x[1])[0]
 
-            # Sinon Critère 3
-            if not chosen_location:
-                chosen_location = self._quelyos_pick_highest_onhand(candidate_locations)
+                # -------------------------
+                # Critère 3 : Plus proche de 0 stock restant
+                # -------------------------
+                if not candidate_location:
+                    location_qties = self._get_all_location_quantities(product)
+                    if location_qties:
+                        candidate_location = min(location_qties, key=lambda x: x[1])[0]
 
-            # Sinon Critère 4
-            if not chosen_location:
-                chosen_location = self._quelyos_pick_most_lines(candidate_locations)
+                # -------------------------
+                # Critère 4 : Réassort vers magasin le plus fourni en articles de la commande
+                # -------------------------
+                if not candidate_location:
+                    candidate_location = self._get_location_with_most_items_in_order(picking)
 
-            if chosen_location:
-                self._quelyos_reserve_from_location(move, chosen_location)
+                if candidate_location:
+                    move.location_id = candidate_location
+                    self._quelyos_log_event("auto_assign_location", {
+                        'product': product.display_name,
+                        'location': candidate_location.display_name,
+                        'qty': qty_needed
+                    })
 
-    # ==========================================
-    # Méthodes utilitaires pour la sélection
-    # ==========================================
-    def _quelyos_get_candidate_locations(self, product, stock_basis):
-        """Retourne dict {location_id: qty} en fonction du type de stock choisi."""
-        quants = self.env['stock.quant'].read_group(
-            [('product_id', '=', product.id),
-             ('location_id.usage', '=', 'internal')],
-            ['location_id', 'quantity', 'available_quantity'],
-            ['location_id']
-        )
-        result = {}
+    def _get_available_qty(self, product, location_id):
+        return sum(self.env['stock.quant'].search([
+            ('product_id', '=', product.id),
+            ('location_id', '=', location_id)
+        ]).mapped('quantity'))
+
+    def _get_all_location_quantities(self, product):
+        quants = self.env['stock.quant'].search([
+            ('product_id', '=', product.id)
+        ])
+        location_qties = {}
         for q in quants:
-            loc_id = q['location_id'][0]
-            if stock_basis == 'free':
-                qty = q.get('available_quantity', 0)
-            elif stock_basis == 'onhand':
-                qty = q.get('quantity', 0)
-            else:  # forecast
-                qty = product.with_context(location=loc_id).virtual_available
-            if qty > 0:
-                result[loc_id] = qty
-        return result
+            location_qties[q.location_id] = location_qties.get(q.location_id, 0) + q.quantity
+        return [(loc, qty) for loc, qty in location_qties.items()]
 
-    def _quelyos_pick_highest_qty(self, candidates):
-        """Critère 2 : plus grande quantité disponible."""
-        if not candidates:
+    def _get_location_with_most_items_in_order(self, picking):
+        item_counts = {}
+        for move in picking.move_ids_without_package:
+            quants = self.env['stock.quant'].search([
+                ('product_id', '=', move.product_id.id)
+            ])
+            for q in quants:
+                item_counts[q.location_id] = item_counts.get(q.location_id, 0) + q.quantity
+        if not item_counts:
             return None
-        return max(candidates, key=lambda k: candidates[k])
-
-    def _quelyos_pick_highest_onhand(self, candidates):
-        """Critère 3 : plus grande quantité physique (On-Hand)."""
-        if not candidates:
-            return None
-        # On recalcule uniquement en On-Hand
-        onhand = {}
-        for loc_id in candidates:
-            qty = self.env['stock.quant'].read_group(
-                [('location_id', '=', loc_id),
-                 ('product_id', 'in', self.move_ids_without_package.product_id.ids)],
-                ['quantity'], ['location_id']
-            )[0]['quantity']
-            onhand[loc_id] = qty
-        if not onhand:
-            return None
-        return max(onhand, key=lambda k: onhand[k])
-
-    def _quelyos_pick_most_lines(self, candidates):
-        """Critère 4 : magasin avec le plus de lignes de la commande."""
-        if not candidates:
-            return None
-        counter = defaultdict(int)
-        for move in self.move_ids_without_package:
-            for loc_id in candidates:
-                counter[loc_id] += 1
-        if not counter:
-            return None
-        return max(counter, key=lambda k: counter[k])
-
-    def _quelyos_reserve_from_location(self, move, location_id):
-        """Réserve le mouvement depuis l’emplacement choisi."""
-        move.location_id = self.env['stock.location'].browse(location_id)
-        move._action_assign()
+        return max(item_counts.items(), key=lambda x: x[1])[0]
