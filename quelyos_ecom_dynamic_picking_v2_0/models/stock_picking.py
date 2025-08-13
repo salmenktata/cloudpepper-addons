@@ -74,9 +74,21 @@ class StockPicking(models.Model):
         # Optimisation : Préchargement des données pour toutes les commandes
         all_products = self.move_ids_without_package.product_id
         all_product_ids = all_products.ids
+        
+        # --- NOUVEAU CODE D'OPTIMISATION ET DE SÉCURITÉ ---
+        # Verrouillage des enregistrements pour éviter les problèmes de concurrence.
+        # On verrouille les produits et les emplacements pour tous les pickings du recordset.
+        self.env.cr.execute("""
+            SELECT id FROM product_product WHERE id IN %s FOR UPDATE
+        """, [tuple(all_product_ids)])
+        
+        self.env.cr.execute("""
+            SELECT id FROM stock_location WHERE id IN %s FOR UPDATE
+        """, [tuple(all_locs.ids)])
+        
         stock_data = self._get_available_quantities(all_product_ids, all_locs.ids, basis)
+        # --- FIN DU NOUVEAU CODE D'OPTIMISATION ET DE SÉCURITÉ ---
 
-        # Création de la source finale et du log en une seule opération pour le recordset
         final_sources = {}
         replenish_data = defaultdict(list)
         
@@ -153,7 +165,6 @@ class StockPicking(models.Model):
                 self._log_event(picking, "fail", {"exp": "Impossible de déterminer une source"})
                 continue
             
-            # Stockage des résultats pour traitement en masse
             final_sources[picking.id] = final_source.id
             if final_source and central and final_source.id != central.id:
                 for pid, need in req.items():
@@ -170,11 +181,9 @@ class StockPicking(models.Model):
                             "location_dest_id": final_source.id,
                         })
             
-            # Application de la source
             picking.location_id = final_source.id
             picking.move_ids_without_package.write({"location_id": final_source.id})
             
-            # Logs et chatter
             self._log_event(picking, "auto_source_result", {
                 "exp": "Sélection source automatique",
                 "choisie": final_source.display_name if final_source else False,
@@ -187,7 +196,6 @@ class StockPicking(models.Model):
                      reassort=" Réassort créé." if len(replenish_data[picking.id]) > 0 else "")
             picking.message_post(body=body)
 
-        # Création des bons de réassort en masse
         if replenish_data:
             for picking_id, moves_data in replenish_data.items():
                 picking_record = self.browse(picking_id)
@@ -204,7 +212,6 @@ class StockPicking(models.Model):
                     "move_ids_without_package": moves_data,
                 })
         
-        # Attribution des pickings en masse
         try:
             self.action_assign()
             self._log_event(self, "assign", {"exp": "Réservation automatique réussie pour le recordset"})
