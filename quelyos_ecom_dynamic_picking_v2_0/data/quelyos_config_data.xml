@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Création de l'entrepôt central -->
+    <record id="warehouse_central" model="stock.warehouse">
+        <field name="name">Entrepôt CENTRAL</field>
+        <field name="code">CENT</field>
+    </record>
+
+    <!-- Création des emplacements des boutiques (enfants de CENT/Stock) -->
+    <record id="location_boutique_gafsa" model="stock.location">
+        <field name="name">Boutique Gafsa</field>
+        <field name="location_id" ref="stock.stock_location_stock"/>
+    </record>
+
+    <record id="location_boutique_sousse" model="stock.location">
+        <field name="name">Boutique Sousse</field>
+        <field name="location_id" ref="stock.stock_location_stock"/>
+    </record>
+
+    <record id="location_boutique_soukra" model="stock.location">
+        <field name="name">Boutique Soukra</field>
+        <field name="location_id" ref="stock.stock_location_stock"/>
+    </record>
+
+    <!-- Création des types d'opérations de réassort -->
+    <record id="picking_type_reassort_gafsa" model="stock.picking.type">
+        <field name="name">Réassort vers Gafsa</field>
+        <field name="code">internal</field>
+        <field name="sequence_code">REASSORT-TO-GAFSA</field>
+        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="default_location_src_id" ref="stock.stock_location_stock"/>
+        <field name="default_location_dest_id" ref="location_boutique_gafsa"/>
+    </record>
+
+    <record id="picking_type_reassort_sousse" model="stock.picking.type">
+        <field name="name">Réassort vers Sousse</field>
+        <field name="code">internal</field>
+        <field name="sequence_code">REASSORT-TO-SOUSSE</field>
+        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="default_location_src_id" ref="stock.stock_location_stock"/>
+        <field name="default_location_dest_id" ref="location_boutique_sousse"/>
+    </record>
+    
+    <record id="picking_type_reassort_soukra" model="stock.picking.type">
+        <field name="name">Réassort vers Soukra</field>
+        <field name="code">internal</field>
+        <field name="sequence_code">REASSORT-TO-SOUKRA</field>
+        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="default_location_src_id" ref="stock.stock_location_stock"/>
+        <field name="default_location_dest_id" ref="location_boutique_soukra"/>
+    </record>
+    
+    <!-- Création des types d'opérations de livraison web -->
+    <record id="picking_type_expedition_web_gafsa" model="stock.picking.type">
+        <field name="name">Expédition Web - Gafsa</field>
+        <field name="code">outgoing</field>
+        <field name="sequence_code">EXP-WEB-GAFSA</field>
+        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="default_location_src_id" ref="location_boutique_gafsa"/>
+        <field name="default_location_dest_id" ref="stock.stock_location_customers"/>
+    </record>
+
+    <record id="picking_type_expedition_web_sousse" model="stock.picking.type">
+        <field name="name">Expédition Web - Sousse</field>
+        <field name="code">outgoing</field>
+        <field name="sequence_code">EXP-WEB-SOUSSE</field>
+        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="default_location_src_id" ref="location_boutique_sousse"/>
+        <field name="default_location_dest_id" ref="stock.stock_location_customers"/>
+    </record>
+    
+    <record id="picking_type_expedition_web_soukra" model="stock.picking.type">
+        <field name="name">Expédition Web - Soukra</field>
+        <field name="code">outgoing</field>
+        <field name="sequence_code">EXP-WEB-SOUKRA</field>
+        <field name="warehouse_id" ref="warehouse_central"/>
+        <field name="default_location_src_id" ref="location_boutique_soukra"/>
+        <field name="default_location_dest_id" ref="stock.stock_location_customers"/>
+    </record>
+
+</odoo>
