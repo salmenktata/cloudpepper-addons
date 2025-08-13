@@ -5,16 +5,17 @@
     'summary': "Crée les données de configuration par défaut pour le module de picking dynamique.",
     'description': """
 Ce module installe la configuration initiale requise par le module 'Quelyos - Dynamic Picking',
-incluant les emplacements de stock et les types d'opérations.
+incluant les emplacements de stock, les types d'opérations et les paramètres par défaut du module Ventes.
     """,
     'author': "Quelyos",
     'website': "https://quelyos.com",
     'category': 'Inventory/Inventory',
-    'depends': ['quelyos_ecom_dynamic_picking'],
+    'depends': ['quelyos_ecom_dynamic_picking_v2_0', 'sale_management'],
     'data': [
         'data/quelyos_config_data.xml',
+        'data/sale_config_data.xml',
     ],
     'installable': True,
-    'auto_install': False, # Cela permet d'installer ce module manuellement
+    'auto_install': False,
     'license': 'LGPL-3',
 }
