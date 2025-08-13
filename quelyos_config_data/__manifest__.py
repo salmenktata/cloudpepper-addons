@@ -10,7 +10,7 @@ incluant les emplacements de stock, les types d'opérations et les paramètres p
     'author': "Quelyos",
     'website': "https://quelyos.com",
     'category': 'Inventory/Inventory',
-    'depends': ['quelyos_ecom_dynamic_picking_v2_0', 'sale_management'],
+    'depends': ['quelyos_ecom_dynamic_picking_v2_0', 'sale_management', 'point_of_sale', 'account'],
     'data': [
         'data/quelyos_config_data.xml',
         'data/sale_config_data.xml',

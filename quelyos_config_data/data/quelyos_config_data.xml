@@ -83,4 +83,34 @@
         <field name="default_location_dest_id" ref="stock.stock_location_customers"/>
     </record>
 
+    <!-- Création des configurations de Point de Vente (PoS) -->
+    <record id="pos_config_soukra" model="pos.config">
+        <field name="name">Boutique Soukra</field>
+        <field name="picking_type_id" ref="picking_type_expedition_web_soukra"/>
+        <field name="journal_id" ref="account.cash_journal"/>
+        <field name="stock_location_id" ref="location_boutique_soukra"/>
+        <field name="iface_cashdrawer">True</field>
+        <field name="iface_electronic_scale">True</field>
+        <field name="module_pos_hr">True</field>
+    </record>
+
+    <record id="pos_config_sousse" model="pos.config">
+        <field name="name">Boutique Sousse</field>
+        <field name="picking_type_id" ref="picking_type_expedition_web_sousse"/>
+        <field name="journal_id" ref="account.cash_journal"/>
+        <field name="stock_location_id" ref="location_boutique_sousse"/>
+        <field name="iface_cashdrawer">True</field>
+        <field name="iface_electronic_scale">True</field>
+        <field name="module_pos_hr">True</field>
+    </record>
+
+    <record id="pos_config_gafsa" model="pos.config">
+        <field name="name">Boutique Gafsa</field>
+        <field name="picking_type_id" ref="picking_type_expedition_web_gafsa"/>
+        <field name="journal_id" ref="account.cash_journal"/>
+        <field name="stock_location_id" ref="location_boutique_gafsa"/>
+        <field name="iface_cashdrawer">True</field>
+        <field name="iface_electronic_scale">True</field>
+        <field name="module_pos_hr">True</field>
+    </record>
 </odoo>
