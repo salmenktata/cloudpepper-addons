@@ -7,7 +7,7 @@
         <field name="arch" type="xml">
             <xpath expr="//block[@name='sale_shipping_setting_container']" position="inside">
                 <setting id="quelyos_dynamic_picking" string="Quelyos – Dynamic Picking"
-                         help="exp : active la sélection automatique de la source pour les livraisons sortantes, avec réassort interne automatique si nécessaire.">
+                         help="Active la sélection automatique de la source pour les livraisons sortantes, avec réassort interne automatique si nécessaire.">
                     <div class="o_form_label">Stratégie appliquée</div>
                     <field name="quelyos_dynamic_strategy"/>
                     <div class="o_form_label mt8">Type de stock utilisé</div>
@@ -21,9 +21,9 @@
                     <div class="o_form_label mt8">Boutiques à considérer</div>
                     <field name="quelyos_dynamic_shop_ids" widget="many2many_tags" options="{'no_open': True}"/>
 
-                    <div class="o_form_label mt8">Ordre strict des boutiques</div>
+                    <div class="o_form_label mt8">Activer l’ordre strict des boutiques</div>
                     <field name="quelyos_dynamic_strict_order_enabled"/>
-                    <div class="text-muted">exp : si activé, teste Gafsa > Sousse > Soukra (ou l’ordre saisi ci‑dessous) et prend la première couvrant toute la commande.</div>
+                    <div class="text-muted">Si activé, teste les boutiques dans l’ordre indiqué ci‑dessous et prend la première couvrant toute la commande.</div>
 
                     <div class="o_form_label mt8">Ordre des boutiques (ex: Gafsa&gt;Sousse&gt;Soukra)</div>
                     <field name="quelyos_dynamic_shop_order_names" placeholder="Gafsa>Sousse>Soukra"/>

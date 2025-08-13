@@ -76,8 +76,12 @@ class ResConfigSettings(models.TransientModel):
         super().set_values()
         ICP = self.env['ir.config_parameter'].sudo()
 
-        ICP.set_param('quelyos_dynamic_strategy', self.quelyos_dynamic_strategy or 'custom')
-        ICP.set_param('quelyos_dynamic_stock_basis', self.quelyos_dynamic_stock_basis or 'free')
+        # Nettoyage et validation des données avant la sauvegarde
+        strategy = self.quelyos_dynamic_strategy if self.quelyos_dynamic_strategy in ('custom', 'disabled') else 'custom'
+        basis = self.quelyos_dynamic_stock_basis if self.quelyos_dynamic_stock_basis in ('free', 'onhand', 'forecast') else 'free'
+        
+        ICP.set_param('quelyos_dynamic_strategy', strategy)
+        ICP.set_param('quelyos_dynamic_stock_basis', basis)
         ICP.set_param('quelyos_dynamic_only_website', '1' if self.quelyos_dynamic_only_website else '0')
         ICP.set_param('quelyos_dynamic_central_location_id', self.quelyos_dynamic_central_location_id.id or 0)
         ICP.set_param('quelyos_dynamic_shop_ids', ','.join(map(str, self.quelyos_dynamic_shop_ids.ids)) if self.quelyos_dynamic_shop_ids else '')
