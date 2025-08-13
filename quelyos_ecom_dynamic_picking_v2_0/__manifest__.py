@@ -20,7 +20,6 @@ Fonctionnalités :
     'depends': ['sale', 'stock'],
     'data': [
         'security/ir.model.access.csv',
-        'views/quelyos_dynamic_picking_rule_views.xml',
         'views/res_config_settings_views.xml',
         'data/quelyos_config_data.xml',
     ],
