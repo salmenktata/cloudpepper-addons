@@ -1,275 +1,304 @@
 # -*- coding: utf-8 -*-
+from collections import defaultdict
+import logging
+
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
+
 
 class StockPicking(models.Model):
     _inherit = "stock.picking"
 
-    quelyos_log = fields.Text(string="Quelyos – Journal (local)")
-
-    @api.model_create_multi
-    def create(self, vals_list):
-        records = super().create(vals_list)
-        for rec in records:
-            rec._quelyos_log_event("create", {
-                "exp": "Création picking",
-                "origine": rec.origin,
-                "type": rec.picking_type_id and rec.picking_type_id.display_name
-            })
-        for rec in records.filtered(lambda r: r.picking_type_id and r.picking_type_id.code == "outgoing"):
-            rec._quelyos_apply_auto_source_strategy()
-        return records
-
+    # --- Hooks/Entry point ---
     def action_assign(self):
-        res = super().action_assign()
-        for rec in self:
-            reserved_flag = any(m.state in ('assigned', 'partially_available') for m in rec.move_ids_without_package)
-            reserved_qty = sum(rec.move_line_ids.mapped('reserved_qty') or [0.0])
-            rec._quelyos_log_event("assign", {
-                "exp": "Vérifier la disponibilité",
-                "reserved": reserved_flag,
-                "reserved_qty": reserved_qty
-            })
-        return res
-
-    def button_validate(self):
-        if self.env["ir.config_parameter"].sudo().get_param("quelyos_ecom_dynamic_picking.strict_order"):
-            for picking in self:
-                picking._quelyos_check_strict_order_before_validate()
-        res = super().button_validate()
-        for rec in self:
-            rec._quelyos_log_event("validate", {"exp": "Validation picking", "etat": rec.state})
-        return res
-
-    def _quelyos_apply_auto_source_strategy(self):
         """
-        exp :
-        - Si CENT/Stock couvre tout → source = CENT
-        - Sinon → meilleure boutique (ou ordre strict si activé)
-        - Si la boutique ne couvre pas tout → créer un réassort interne CENT → Boutique (manquant)
+        Au moment de la réservation, on applique la stratégie :
+        - choisir la meilleure source (central/boutiques)
+        - si source != central : créer un réassort interne central -> source pour le manque
+        - auto-confirmer et tenter la réservation du réassort si l'option est activée
+        - mettre à jour les moves (location_id) avec la source décidée
         """
-        P = self.env["ir.config_parameter"].sudo()
-
-        def _qget(key, default=None):
-            v = P.get_param(f"quelyos_dynamic_{key}")
-            if v in (None, "", False):
-                v = P.get_param(f"quelyos_ecom_dynamic_picking.{key}")
-            return v if v not in (None, "") else default
-
-        strategy = _qget("strategy", "custom")
-        only_web = _qget("only_website", "False") in ("1", "True", "true")
-        basis = _qget("stock_basis", "free")
-
-        central_id = int(_qget("central_location_id", 0) or 0)
-        shop_ids_csv = _qget("shop_ids", "")
-        shop_ids = [int(x) for x in shop_ids_csv.split(",") if x]
-
-        strict_names_enabled = _qget("strict_shop_order_enabled", "False") in ("1", "True", "true")
-        order_names = (_qget("shop_order_names", "") or "").replace(">", ",")
-        priority_names = [n.strip() for n in order_names.split(",") if n.strip()]
-
-        def available_qty(product, location):
-            if not location:
-                return 0.0
-            if basis == "free":
-                quants = self.env["stock.quant"].sudo().read_group(
-                    domain=[("product_id", "=", product.id), ("location_id", "child_of", location.id)],
-                    fields=["quantity:sum", "reserved_quantity:sum"],
-                    groupby=["product_id"],
-                )
-                qty = (quants and quants[0].get("quantity", 0.0)) or 0.0
-                res = (quants and quants[0].get("reserved_quantity", 0.0)) or 0.0
-                return max(0.0, qty - res)
-            prod_ctx = product.with_context(location=location.id, compute_child=True)
-            if basis == "onhand":
-                return prod_ctx.qty_available
-            elif basis == "forecast":
-                return prod_ctx.virtual_available
-            return 0.0
-
         for picking in self:
-            if not picking.picking_type_id or picking.picking_type_id.code != "outgoing":
-                continue
-            if strategy != "custom":
-                continue
-            if only_web and not getattr(picking, "sale_id", False):
-                continue
-            if only_web and picking.sale_id and not getattr(picking.sale_id, "website_id", False):
-                continue
+            picking._quelyos_apply_strategy_if_needed()
+        return super().action_assign()
 
-            Loc = self.env["stock.location"].sudo()
-            central = Loc.browse(central_id) if central_id else Loc.browse(False)
-            shops = Loc.browse(shop_ids)
-
-            if not (central or shops):
-                self._quelyos_log_event("auto_source_skip", {
-                    "exp": "Aucun emplacement central ni boutique configuré"
-                })
-                continue
-
-            # Besoins par produit
-            req = {}
-            for move in picking.move_ids_without_package:
-                product = move.product_id
-                qty = move.product_uom._compute_quantity(move.product_uom_qty, product.uom_id)
-                req[product.id] = req.get(product.id, 0.0) + qty
-
-            # Critère 1 : CENT couvre tout ?
-            central_ok = False
-            if central:
-                central_ok = all(
-                    available_qty(self.env["product.product"].browse(pid), central) >= need
-                    for pid, need in req.items()
-                )
-
-            chosen_shop = False
-            coverage_score = {}
-            if not central_ok and shops:
-                # Critère 3 : ordre strict
-                if strict_names_enabled and priority_names:
-                    for name in priority_names:
-                        shop = shops.filtered(lambda l: l.name.strip().lower() == name.lower())[:1]
-                        if shop:
-                            ok = all(
-                                available_qty(self.env["product.product"].browse(pid), shop) >= need
-                                for pid, need in req.items()
-                            )
-                            if ok:
-                                chosen_shop = shop
-                                break
-
-                # Meilleure boutique par score (somme des libres), avec tie-break couverture
-                if not chosen_shop:
-                    best_shop = False
-                    best_score = -1.0
-                    best_tiebreak_cover = -1.0
-                    for shop in shops:
-                        free_sum = 0.0
-                        cover_sum = 0.0
-                        for pid, need in req.items():
-                            prod = self.env["product.product"].browse(pid)
-                            have = available_qty(prod, shop)
-                            free_sum += have
-                            cover_sum += max(0.0, min(have, need))
-                        coverage_score[shop.id] = {"free_sum": free_sum, "cover_sum": cover_sum}
-                        if (free_sum > best_score) or (free_sum == best_score and cover_sum > best_tiebreak_cover):
-                            best_score = free_sum
-                            best_tiebreak_cover = cover_sum
-                            best_shop = shop
-                    chosen_shop = best_shop
-
-            # Choix final
-            final_source = False
-            strategie_appliquee = ""
-            if central_ok:
-                final_source = central
-                strategie_appliquee = "central_complet"
-            elif chosen_shop:
-                final_source = chosen_shop
-                strategie_appliquee = "meilleure_boutique_ou_ordre_strict"
-            elif central:
-                final_source = central
-                strategie_appliquee = "central_par_defaut"
-            else:
-                final_source = shops[:1] if shops else False
-                strategie_appliquee = "premier_disponible"
-
-            if not final_source:
-                self._quelyos_log_event("auto_source_fail", {
-                    "exp": "Impossible de déterminer une source",
-                    "basis": basis
-                })
-                continue
-
-            # Appliquer la source
-            picking.write({"location_id": final_source.id})
-            for mv in picking.move_ids_without_package:
-                mv.write({"location_id": final_source.id})
-
-            # Réassort si source != central
-            created_replenish = False
-            if final_source and central and final_source.id != central.id:
-                moves_data = []
-                for pid, need in req.items():
-                    prod = self.env["product.product"].browse(pid)
-                    have = available_qty(prod, final_source)
-                    missing = max(0.0, need - have)
-                    if missing > 0:
-                        moves_data.append((0, 0, {
-                            "name": "%s → %s : %s" % (central.display_name, final_source.display_name, prod.display_name),
-                            "product_id": prod.id,
-                            "product_uom": prod.uom_id.id,
-                            "product_uom_qty": missing,
-                            "location_id": central.id,
-                            "location_dest_id": final_source.id,
-                        }))
-                if moves_data:
-                    picking_type_internal = self.env["stock.picking.type"].sudo().search([
-                        ("code", "=", "internal"),
-                        ("warehouse_id", "=", picking.picking_type_id.warehouse_id.id),
-                    ], limit=1) or self.env["stock.picking.type"].sudo().search([("code", "=", "internal")], limit=1)
-
-                    self.env["stock.picking"].sudo().create({
-                        "picking_type_id": picking_type_internal.id if picking_type_internal else False,
-                        "location_id": central.id,
-                        "location_dest_id": final_source.id,
-                        "origin": (picking.name or picking.origin or "") + " / Réassort auto",
-                        "move_ids_without_package": moves_data,
-                    })
-                    created_replenish = True
-
-            # Réserver tout de suite
-            try:
-                picking.action_assign()
-            except Exception as e:
-                picking._quelyos_log_event("assign_error", {"exp": "Erreur à la réservation auto", "erreur": str(e)})
-
-            # Logs
-            picking._quelyos_log_event("auto_source", {
-                "exp": "Sélection source automatique",
-                "strategie": strategy,
-                "basis": basis,
-                "central": central and central.display_name or False,
-                "choisie": final_source.display_name if final_source else False,
-                "reassort_cree": created_replenish,
-                "scores": coverage_score,
-            })
-            picking.message_post(body=_(
-                "📦 Stratégie Qelyos : source '%(src)s' (règle : %(rule)s).%(reassort)s",
-                src=final_source.display_name,
-                rule=strategie_appliquee,
-                reassort=" Réassort créé." if created_replenish else ""
-            ))
-
-    def _quelyos_log_event(self, event, extra=None):
-        msg = "[QUELYOS][%s] %s" % (event.upper(), extra or {})
-        for rec in self:
-            rec.quelyos_log = (rec.quelyos_log or "") + (("\n" if rec.quelyos_log else "") + msg)
-            rec.message_post(body=msg)
-
-    def _quelyos_check_strict_order_before_validate(self):
+    # --- Core Strategy ---
+    def _quelyos_apply_strategy_if_needed(self):
         self.ensure_one()
-        if not self.group_id and not self.origin:
+        if not self._quelyos_should_run_strategy():
             return
-        domain = [("id", "!=", self.id), ("state", "not in", ("done", "cancel"))]
-        if self.group_id:
-            domain += [("group_id", "=", self.group_id.id)]
-        else:
-            domain += [("origin", "=", self.origin)]
-        if self.picking_type_id and self.picking_type_id.sequence:
-            domain += [("picking_type_id.sequence", "<", self.picking_type_id.sequence)]
-        blockers = self.search(domain, limit=1)
-        if blockers:
-            raise UserError(_("Ordre strict : vous devez d'abord terminer '%s' (type : %s).")
-                            % (blockers.display_name, blockers.picking_type_id.display_name))
 
+        ICP = self.env["ir.config_parameter"].sudo()
+        basis = (ICP.get_param("quelyos_dynamic_stock_basis") or "free").strip()
+        strict_enabled = str(ICP.get_param("quelyos_dynamic_strict_order_enabled") or "False") in ("1", "True", "true")
+        strict_order_text = (ICP.get_param("quelyos_dynamic_strict_shop_order") or "").strip()
 
-class SaleOrder(models.Model):
-    _inherit = "sale.order"
+        central, shops = self._quelyos_get_locations_from_conf()
+        if not central and not shops:
+            return  # pas de configuration utile
 
-    def _action_confirm(self):
-        res = super()._action_confirm()
-        pickings = self.mapped("picking_ids").filtered(lambda p: p.picking_type_id.code == "outgoing")
-        for p in pickings:
-            p._quelyos_apply_auto_source_strategy()
-        return res
+        # Besoins de la commande
+        req = self._quelyos_requirements_per_product()
+
+        if not req:
+            return
+
+        # Évalue quantités dispos + choix
+        choice, details = self._quelyos_choose_source(req, central, shops, basis, strict_enabled, strict_order_text)
+
+        # Si rien trouvé (cas extrême), on laisse la config initiale
+        if not choice:
+            return
+
+        # Applique la source aux mouvements
+        self._quelyos_retarget_moves(choice)
+
+        # Si source != central → réassort central -> source
+        if central and choice.id != central.id:
+            missing = self._quelyos_missing_by_product(req, choice, basis)
+            if any(qty > 0 for qty in missing.values()):
+                repick = self._quelyos_create_internal_replenishment(central, choice, missing)
+                if repick:
+                    # Auto-confirm + reserve si option active
+                    auto = str(ICP.get_param("quelyos_dynamic_auto_confirm_replenishment") or "True") in ("1", "True", "true")
+                    if auto:
+                        try:
+                            repick.action_confirm()
+                            repick.action_assign()
+                        except Exception as e:
+                            _logger.exception("Auto-confirm/assign failed on replenishment %s: %s", repick.name, e)
+                            repick.message_post(body=_("Échec de l'auto-confirmation/réservation : %s") % e)
+
+                    # Log sur le picking d'origine
+                    msg = _(
+                        "Réassort interne créé : <b>%s</b> (de %s vers %s). "
+                        "Produits/Qtés manquants : %s"
+                    ) % (
+                        repick.name,
+                        central.display_name,
+                        choice.display_name,
+                        ", ".join(
+                            "%s: %s" % (self.env["product.product"].browse(pid).display_name, qty)
+                            for pid, qty in missing.items() if qty > 0
+                        )
+                    )
+                    self.message_post(body=msg)
+
+        # Trace côté picking
+        log = _(
+            "Qelyos – Dynamic Picking: Source retenue = <b>%s</b>. Détails: %s"
+        ) % (
+            choice.display_name,
+            details,
+        )
+        self.message_post(body=log)
+
+    # --- Strategy helpers ---
+    def _quelyos_should_run_strategy(self):
+        """ Vérifie si on doit appliquer la stratégie pour CE picking. """
+        self.ensure_one()
+        ICP = self.env["ir.config_parameter"].sudo()
+        enabled = str(ICP.get_param("quelyos_dynamic_enabled") or "False") in ("1", "True", "true")
+        if not enabled:
+            return False
+
+        # Sortants uniquement
+        if self.picking_type_id.code != "outgoing":
+            return False
+
+        # eCommerce only ?
+        ecom_only = str(ICP.get_param("quelyos_dynamic_ecom_only") or "False") in ("1", "True", "true")
+        if ecom_only:
+            so = self.sale_id
+            # eCom s'il y a un website sur la commande. On ne dépend PAS de website_sale (sécurisé).
+            if not so or not hasattr(so, "website_id") or not so.website_id:
+                return False
+        return True
+
+    def _quelyos_get_locations_from_conf(self):
+        """ Renvoie (central_location, shops_recordset) """
+        ICP = self.env["ir.config_parameter"].sudo()
+        central_id = int(ICP.get_param("quelyos_dynamic_central_location_id", default="0") or 0)
+        shops = (ICP.get_param("quelyos_dynamic_shop_ids", default="") or "").strip()
+        shop_ids = []
+        if shops:
+            try:
+                shop_ids = [int(x) for x in shops.split(",") if x.strip().isdigit()]
+            except Exception:
+                shop_ids = []
+        central = self.env["stock.location"].browse(central_id) if central_id else False
+        shops_rs = self.env["stock.location"].browse(shop_ids) if shop_ids else self.env["stock.location"]
+        return central if central and central.exists() else False, shops_rs.filtered(lambda l: l.exists())
+
+    def _quelyos_requirements_per_product(self):
+        """ Besoins nets en UoM produit (réservations déduites). """
+        req = defaultdict(float)
+        for mv in self.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",) and m.product_id and m.product_id.type in ("product",)):
+            # Besoin net = demandé - déjà réservé
+            need_in_move_uom = max(0.0, mv.product_uom_qty - (mv.reserved_availability or 0.0))
+            if not need_in_move_uom:
+                continue
+            # Convertir vers l'UoM du produit si besoin
+            qty_in_product_uom = mv.product_uom._compute_quantity(need_in_move_uom, mv.product_id.uom_id, rounding_method="HALF-UP")
+            req[mv.product_id.id] += qty_in_product_uom
+        return dict(req)
+
+    def _quelyos_available_qty(self, product, location, basis):
+        """ Quantité dispo à un emplacement selon la base choisie. """
+        p = product.with_context(location=location.id)
+        if basis == "onhand":
+            return p.qty_available
+        elif basis == "forecast":
+            return p.virtual_available
+        # default: free
+        # Certains Odoo exposent 'free_qty'
+        return getattr(p, "free_qty", p.qty_available - p.outgoing_qty)
+
+    def _quelyos_choose_source(self, req, central, shops, basis, strict_enabled, strict_order_text):
+        """
+        Implémente les 4 priorités :
+          1) Central couvre tout → central
+          2) Strict ON : 1ère boutique de la liste qui couvre tout
+          3) Strict OFF : meilleure boutique (si elle couvre tout)
+          4) Sinon : emplacement (central ou boutique) avec meilleure couverture globale
+        Renvoie (record location choisi | False, details string)
+        """
+        details = []
+
+        def covers_all(location):
+            for pid, need in req.items():
+                have = self._quelyos_available_qty(self.env["product.product"].browse(pid), location, basis)
+                if have + 1e-6 < need:
+                    return False
+            return True
+
+        def coverage_score(location):
+            free_sum = 0.0
+            cover_sum = 0.0
+            for pid, need in req.items():
+                prod = self.env["product.product"].browse(pid)
+                have = self._quelyos_available_qty(prod, location, basis)
+                free_sum += max(0.0, have)
+                cover_sum += max(0.0, min(have, need))
+            return cover_sum, free_sum
+
+        # P1: Central couvre tout ?
+        if central:
+            if covers_all(central):
+                details.append(_("P1: Central couvre tout → %s") % central.display_name)
+                return central, "; ".join(details)
+            else:
+                cov = coverage_score(central)
+                details.append(_("P1: Central ne couvre pas tout (cover=%s, free=%s)") % (cov[0], cov[1]))
+
+        # Prépare liste boutiques
+        shops_list = shops
+        # P2: Ordre strict -> parser texte et réordonner
+        if strict_enabled and strict_order_text:
+            order_names = [x.strip() for x in strict_order_text.split(">") if x.strip()]
+            def order_key(loc):
+                # score élevé si nom présent tôt dans l'ordre
+                for i, name in enumerate(order_names):
+                    if name.lower() in (loc.display_name or "").lower():
+                        return i
+                # si pas dans la liste -> après
+                return len(order_names) + 1
+            shops_list = shops.sorted(key=order_key)
+
+        # P2: strict ON → 1ère boutique qui couvre tout
+        if strict_enabled:
+            for loc in shops_list:
+                if covers_all(loc):
+                    details.append(_("P2: Ordre strict ON → %s couvre tout") % loc.display_name)
+                    return loc, "; ".join(details)
+            details.append(_("P2: Aucune boutique de l'ordre strict ne couvre tout"))
+
+        # P3: strict OFF → meilleure boutique si elle couvre tout (tie-break: free_sum)
+        if not strict_enabled and shops:
+            candidates = []
+            for loc in shops:
+                if covers_all(loc):
+                    cov = coverage_score(loc)
+                    candidates.append((cov[0], cov[1], loc))
+            if candidates:
+                candidates.sort(reverse=True)  # max(cover_sum, free_sum)
+                best = candidates[0][2]
+                details.append(_("P3: Meilleure boutique (sans ordre strict) couvrant tout → %s") % best.display_name)
+                return best, "; ".join(details)
+            details.append(_("P3: Aucune boutique ne couvre tout"))
+
+        # P4: Personne ne couvre tout → meilleur taux de couverture global central vs boutiques
+        candidates = []
+        if central:
+            cov = coverage_score(central)
+            candidates.append((cov[0], cov[1], central))
+        for loc in shops:
+            cov = coverage_score(loc)
+            candidates.append((cov[0], cov[1], loc))
+        candidates.sort(reverse=True)
+        chosen = candidates[0][2] if candidates else False
+        if chosen:
+            details.append(_("P4: Personne ne couvre 100%% → choix de la meilleure couverture globale → %s") % chosen.display_name)
+        return chosen, "; ".join(details)
+
+    def _quelyos_retarget_moves(self, new_source_location):
+        """ Remplace la source de tous les moves par l'emplacement choisi. """
+        for mv in self.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",)):
+            if mv.location_id.id != new_source_location.id:
+                mv.location_id = new_source_location.id
+
+    def _quelyos_missing_by_product(self, req, chosen_location, basis):
+        """ Calcule les quantités manquantes (en UoM produit) à transférer depuis le central. """
+        missing = {}
+        for pid, need in req.items():
+            prod = self.env["product.product"].browse(pid)
+            have = max(0.0, self._quelyos_available_qty(prod, chosen_location, basis))
+            miss = max(0.0, need - have)
+            missing[pid] = miss
+        return missing
+
+    def _quelyos_create_internal_replenishment(self, central, dest_location, missing_dict):
+        """ Crée un picking interne central -> dest pour les quantités manquantes. """
+        # Filtrer les lignes utiles
+        moves_vals = []
+        for pid, qty in missing_dict.items():
+            if qty <= 0:
+                continue
+            prod = self.env["product.product"].browse(pid)
+            moves_vals.append((
+                0, 0, {
+                    "name": _("Réassort %s") % (prod.display_name,),
+                    "product_id": prod.id,
+                    "product_uom": prod.uom_id.id,
+                    "product_uom_qty": qty,
+                    "location_id": central.id,
+                    "location_dest_id": dest_location.id,
+                }
+            ))
+        if not moves_vals:
+            return False
+
+        # Type de transfert interne (code='internal')
+        ptype = self.env["stock.picking.type"].search(
+            [("code", "=", "internal"), ("company_id", "=", self.company_id.id)], limit=1
+        )
+        if not ptype:
+            ptype = self.env["stock.picking.type"].search([("code", "=", "internal")], limit=1)
+        if not ptype:
+            raise UserError(_("Aucun type de picking interne trouvé (code 'internal')."))
+
+        vals = {
+            "picking_type_id": ptype.id,
+            "company_id": self.company_id.id,
+            "origin": _("Réassort pour %s") % (self.name,),
+            "location_id": central.id,
+            "location_dest_id": dest_location.id,
+            "move_ids_without_package": moves_vals,
+            "note": _("Créé automatiquement par Quelyos – Dynamic Picking."),
+        }
+        repick = self.env["stock.picking"].create(vals)
+        _logger.info("Réassort interne créé %s pour %s", repick.name, self.name)
+        repick.message_post(body=_("Réassort créé automatiquement pour <b>%s</b>.") % self.name)
+        return repick
