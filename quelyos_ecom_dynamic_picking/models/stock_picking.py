@@ -1,36 +1,33 @@
 # -*- coding: utf-8 -*-
 from collections import defaultdict
 import logging
-
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
-
 class StockPicking(models.Model):
     _inherit = "stock.picking"
 
-    # Point d’entrée : réservation
+    # Entrée standard (ex: bouton "Vérifier la dispo", confirm SO qui passe par la picking)
     def action_assign(self):
         for picking in self:
             picking._quelyos_apply_strategy_if_needed()
         return super().action_assign()
 
-    # Stratégie complète
     def _quelyos_apply_strategy_if_needed(self):
         """
-        Applique la stratégie de choix de source AVANT la réservation :
-          - si nécessaire, annule toute réservation existante (unreserve)
-          - recible la source des mouvements
-          - si source != central : crée réassort interne, auto-confirme/réserve (+ auto-valide si 100% réservé et option activée)
+        Applique la stratégie AVANT la réservation:
+         - vérifie l’éligibilité (avec logs de 'skip reason')
+         - annule toute réservation existante (unreserve)
+         - recible la source des moves → emplacement choisi
+         - si source != central : crée un réassort interne (auto-confirm/assign [+ auto-validate si activée])
+        Ne déclenche PAS elle-même la réservation du picking: elle laisse l’appelant (_action_assign / action_assign) le faire.
         """
         self.ensure_one()
 
-        # ---- Vérif d'éligibilité + logs 'skip reason'
         ok, reason = self._quelyos_should_run_strategy_with_reason()
         if not ok:
-            # journaliser pour diagnostic sur l'instance
             _logger.info("Quelyos DP: SKIP on %s -> %s", self.name, reason)
             try:
                 self.message_post(body=_("Quelyos – Dynamic Picking: stratégie ignorée. Raison: <i>%s</i>.") % reason)
@@ -58,7 +55,7 @@ class StockPicking(models.Model):
             self.message_post(body=_("Quelyos – Dynamic Picking: aucune source sélectionnée (détails: %s).") % details)
             return
 
-        # ✅ CORRECTION : libérer toutes les réservations existantes avant de recibler
+        # 1) Libérer les réservations existantes pour éviter les splits multi-emplacements
         moves_to_unreserve = self.move_ids_without_package.filtered(
             lambda m: m.state not in ('cancel',) and (m.reserved_availability or 0.0) > 0.0
         )
@@ -69,10 +66,10 @@ class StockPicking(models.Model):
                 _logger.exception("Unreserve failed on picking %s: %s", self.name, e)
                 self.message_post(body=_("Échec libération des réservations existantes : %s") % e)
 
-        # Re-cible la source
+        # 2) Re-cibler tous les moves vers l’emplacement choisi
         self._quelyos_retarget_moves(choice)
 
-        # Réassort si source != central
+        # 3) Si la source retenue n’est pas le central -> créer un réassort interne central -> source
         if central and choice.id != central.id:
             missing = self._quelyos_missing_by_product(req, choice, basis)
             if any(qty > 0 for qty in missing.values()):
@@ -80,11 +77,11 @@ class StockPicking(models.Model):
                 if repick:
                     auto_confirm = str(ICP.get_param("quelyos_dynamic_auto_confirm_replenishment") or "True") in ("1", "True", "true")
                     auto_validate = str(ICP.get_param("quelyos_dynamic_auto_validate_replenishment") or "True") in ("1", "True", "true")
+
                     if auto_confirm:
                         try:
                             repick.action_confirm()
                             repick.action_assign()
-                            # Option : auto-valider si 100% réservé
                             if auto_validate and self._quelyos_is_fully_reserved(repick):
                                 if hasattr(repick, "action_set_quantities_to_reservation"):
                                     repick.action_set_quantities_to_reservation()
@@ -93,7 +90,7 @@ class StockPicking(models.Model):
                             _logger.exception("Auto-confirm/assign/validate failed on replenishment %s: %s", repick.name, e)
                             repick.message_post(body=_("Échec auto (confirm/réservation/validation) : %s") % e)
 
-                    # Journalise sur le picking d’origine
+                    # Log de synthèse sur le picking d’origine
                     msg = _(
                         "Réassort interne créé : <b>%s</b> (de %s vers %s). "
                         "Produits/Qtés manquants : %s"
@@ -102,17 +99,18 @@ class StockPicking(models.Model):
                         central.display_name,
                         choice.display_name,
                         ", ".join(
-                            "%s: %s" % (self.env["product.product"].browse(pid).display_name, qty)
+                            "%s: %s" % (self.env['product.product'].browse(pid).display_name, qty)
                             for pid, qty in missing.items() if qty > 0
                         )
                     )
                     self.message_post(body=msg)
 
-        # Log stratégie
+        # 4) Log stratégie
         self.message_post(body=_("Quelyos – Dynamic Picking: Source retenue = <b>%s</b>. Détails: %s") %
                                (choice.display_name, details))
 
-    # Helper : fully reserved ?
+    # --- Helpers ---
+
     def _quelyos_is_fully_reserved(self, picking):
         """Vrai si toutes les lignes sont entièrement réservées (en UoM des mouvements)."""
         for mv in picking.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",)):
@@ -121,7 +119,6 @@ class StockPicking(models.Model):
                 return False
         return True
 
-    # Conditions d’exécution (avec raison textuelle pour logs)
     def _quelyos_should_run_strategy_with_reason(self):
         self.ensure_one()
         ICP = self.env["ir.config_parameter"].sudo()
@@ -140,7 +137,6 @@ class StockPicking(models.Model):
                 return False, _("option 'Limiter aux commandes eCommerce' activée et ce picking ne provient pas d'une commande web")
         return True, ""
 
-    # Lecture conf locations
     def _quelyos_get_locations_from_conf(self):
         ICP = self.env["ir.config_parameter"].sudo()
         central_id = int(ICP.get_param("quelyos_dynamic_central_location_id", default="0") or 0)
@@ -155,7 +151,6 @@ class StockPicking(models.Model):
         shops_rs = self.env["stock.location"].browse(shop_ids) if shop_ids else self.env["stock.location"]
         return central if central and central.exists() else False, shops_rs.filtered(lambda l: l.exists())
 
-    # Besoins nets (en UoM produit)
     def _quelyos_requirements_per_product(self):
         req = defaultdict(float)
         for mv in self.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",) and m.product_id and m.product_id.type in ("product",)):
@@ -166,7 +161,6 @@ class StockPicking(models.Model):
             req[mv.product_id.id] += qty_in_product_uom
         return dict(req)
 
-    # Dispo par base
     def _quelyos_available_qty(self, product, location, basis):
         p = product.with_context(location=location.id)
         if basis == "onhand":
@@ -175,7 +169,6 @@ class StockPicking(models.Model):
             return p.virtual_available
         return getattr(p, "free_qty", p.qty_available - p.outgoing_qty)
 
-    # Choix de la source (P1→P4)
     def _quelyos_choose_source(self, req, central, shops, basis, strict_enabled, strict_order_text):
         details = []
 
@@ -251,14 +244,11 @@ class StockPicking(models.Model):
             details.append(_("P4: Personne ne couvre 100%% → meilleure couverture globale → %s") % chosen.display_name)
         return chosen, "; ".join(details)
 
-    # Appliquer la source choisie
     def _quelyos_retarget_moves(self, new_source_location):
         for mv in self.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",)):
             if mv.location_id.id != new_source_location.id:
                 mv.location_id = new_source_location.id
-                # NOTE: la réservation réelle sera refaite par super().action_assign()
 
-    # Quantités manquantes (à réassortir)
     def _quelyos_missing_by_product(self, req, chosen_location, basis):
         missing = {}
         for pid, need in req.items():
@@ -267,7 +257,6 @@ class StockPicking(models.Model):
             missing[pid] = max(0.0, need - have)
         return missing
 
-    # Création du picking interne
     def _quelyos_create_internal_replenishment(self, central, dest_location, missing_dict):
         moves_vals = []
         for pid, qty in missing_dict.items():
