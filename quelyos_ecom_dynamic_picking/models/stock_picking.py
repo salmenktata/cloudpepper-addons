@@ -222,11 +222,14 @@ class StockPicking(models.Model):
                 groupby=["location_id", "product_id"],
             )
             for quant in quants:
-                loc_id = quant['location_id'][0]
-                prod_id = quant['product_id'][0]
-                available_qty = quant['quantity'] - quant['reserved_quantity']
-                res[loc_id][prod_id] = max(0.0, available_qty)
+                # Ajout d'une vérification pour s'assurer que les clés existent
+                if 'product_id' in quant and 'location_id' in quant:
+                    loc_id = quant['location_id'][0]
+                    prod_id = quant['product_id'][0]
+                    available_qty = quant.get('quantity', 0.0) - quant.get('reserved_quantity', 0.0)
+                    res[loc_id][prod_id] = max(0.0, available_qty)
         else:
+            # Cette boucle est un goulot d'étranglement de performance et devrait être refactorisée
             for loc_id in location_ids:
                 if not loc_id:
                     continue
