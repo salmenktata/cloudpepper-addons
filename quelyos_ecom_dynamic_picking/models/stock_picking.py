@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 import logging
-from odoo import api, fields, models, _
-from odoo.exceptions import UserError
 from collections import defaultdict
 
+from odoo import api, fields, models, _
+from odoo.exceptions import UserError
+
 _logger = logging.getLogger(__name__)
+
 
 class StockPicking(models.Model):
     _inherit = "stock.picking"
@@ -23,8 +25,10 @@ class StockPicking(models.Model):
         for rec in self:
             reserved_flag = any(m.state in ('assigned', 'partially_available') for m in rec.move_ids_without_package)
             reserved_qty = sum(rec.move_line_ids.mapped('reserved_qty'))
-            _logger.info("[QUELYOS][assign] Vérification disponibilité pour %s: réservé=%s, quantité réservée=%s",
-                         rec.name, reserved_flag, reserved_qty)
+            _logger.info(
+                "[QUELYOS][assign] Vérification disponibilité pour %s: réservé=%s, quantité réservée=%s",
+                rec.name, reserved_flag, reserved_qty
+            )
         return res
 
     def button_validate(self):
@@ -35,7 +39,7 @@ class StockPicking(models.Model):
         for rec in self:
             _logger.info("[QUELYOS][validate] Validation picking %s, état final: %s", rec.name, rec.state)
         return res
-    
+
     def _quelyos_apply_auto_source_strategy(self):
         """
         Applique la stratégie de sélection de l'emplacement source pour les livraisons sortantes
@@ -43,23 +47,24 @@ class StockPicking(models.Model):
         """
         # Récupération des paramètres en dehors de la boucle
         P = self.env["ir.config_parameter"].sudo()
+
         def _get_param(key, default=None):
             return P.get_param(f"quelyos_dynamic_{key}", default)
 
         strategy = _get_param("strategy", "custom")
         if strategy != "custom":
             return
-        
+
         only_web = _get_param("only_website", 'False') in ('1', 'True', 'true')
         basis = _get_param("stock_basis", "free")
         central_id = int(_get_param("central_location_id", '0') or '0')
         shop_ids_csv = _get_param("shop_ids", "")
         strict_names_enabled = _get_param("strict_order_enabled", 'False') in ('1', 'True', 'true')
         order_names = _get_param("shop_order_names", "") or ""
-        
+
         priority_names = [n.strip().lower() for n in order_names.replace(">", ",").split(",") if n.strip()]
         shops_ids = [int(x) for x in shop_ids_csv.split(",") if x]
-        
+
         Loc = self.env["stock.location"].sudo()
         central = Loc.browse(central_id) if central_id else self.env['stock.location'].sudo()
         shops = Loc.browse(shops_ids)
@@ -68,19 +73,31 @@ class StockPicking(models.Model):
         if not all_locs:
             self._log_event(self, "skip", {"exp": "Aucun emplacement central ni boutique configuré"})
             return
-            
-        # NOUVELLE VÉRIFICATION : la logique ne s'applique pas aux commandes PoS.
-        pickings_to_process = self.filtered(lambda p: not p.sale_id or not self.env['pos.order'].search([('sale_order_ids', 'in', p.sale_id.ids)]))
+
+        # ----------- PATCH PoS ROBUSTE -----------
+        # Exclure les pickings issus du PoS sans supposer l'existence d'un champ custom sur sale.order.
+        # - On pré-collecte les sale.order liés
+        sale_ids = set(self.mapped('sale_id').ids)
+        sale_ids_with_pos = set()
+
+        # Ne plante pas si le module PoS n'est pas installé
+        if sale_ids and ('pos.order' in self.env):
+            pos_orders = self.env['pos.order'].sudo().search([('sale_order_ids', 'in', list(sale_ids))])
+            # pos.order.sale_order_ids est une M2M -> on récupère tous les sale_id liés à un pos.order
+            sale_ids_with_pos = set(pos_orders.mapped('sale_order_ids').ids)
+
+        pickings_to_process = self.filtered(lambda p: not p.sale_id or p.sale_id.id not in sale_ids_with_pos)
+        # --------- FIN PATCH PoS ROBUSTE ---------
 
         # Optimisation : Préchargement des données pour toutes les commandes
         all_products = pickings_to_process.move_ids_without_package.product_id
         all_product_ids = all_products.ids
-        
+
         stock_data = self._get_available_quantities(all_product_ids, all_locs.ids, basis)
 
         final_sources = {}
         replenish_data = defaultdict(list)
-        
+
         for picking in pickings_to_process:
             if not picking.picking_type_id or picking.picking_type_id.code != "outgoing":
                 continue
@@ -103,7 +120,7 @@ class StockPicking(models.Model):
 
             final_source = self.env['stock.location']
             strategie_appliquee = ""
-            
+
             # Début de la logique de sélection
             central_ok = check_full_coverage(central) if central else False
             if central_ok:
@@ -130,7 +147,7 @@ class StockPicking(models.Model):
                             best_score = free_sum
                             best_tiebreak = cover_sum
                             best_shop = shop
-                
+
                 if best_shop and check_full_coverage(best_shop):
                     final_source = best_shop
                     strategie_appliquee = "meilleure_boutique_ou_ordre_strict_complet"
@@ -140,11 +157,13 @@ class StockPicking(models.Model):
                     for loc in all_locs:
                         if not loc:
                             continue
-                        current_coverage_score = sum(min(stock_data.get(loc.id, {}).get(pid, 0.0), need) for pid, need in req.items())
+                        current_coverage_score = sum(
+                            min(stock_data.get(loc.id, {}).get(pid, 0.0), need) for pid, need in req.items()
+                        )
                         if current_coverage_score > best_coverage_score:
                             best_coverage_score = current_coverage_score
                             best_coverage_loc = loc
-                    
+
                     if best_coverage_loc:
                         final_source = best_coverage_loc
                         strategie_appliquee = "meilleure_couverture"
@@ -155,8 +174,10 @@ class StockPicking(models.Model):
             if not final_source:
                 self._log_event(picking, "fail", {"exp": "Impossible de déterminer une source"})
                 continue
-            
+
             final_sources[picking.id] = final_source.id
+
+            # Préparation de réassort interne si la source n'est pas le central
             if final_source and central and final_source.id != central.id:
                 for pid, need in req.items():
                     have = stock_data.get(final_source.id, {}).get(pid, 0.0)
@@ -171,22 +192,26 @@ class StockPicking(models.Model):
                             "location_id": central.id,
                             "location_dest_id": final_source.id,
                         })
-            
+
+            # Appliquer la source au picking et à ses moves
             picking.location_id = final_source.id
             picking.move_ids_without_package.write({"location_id": final_source.id})
-            
+
             self._log_event(picking, "auto_source_result", {
                 "exp": "Sélection source automatique",
                 "choisie": final_source.display_name if final_source else False,
                 "strategie": strategie_appliquee,
                 "reassort_cree": len(replenish_data[picking.id]) > 0,
             })
-            body = _("📦 Stratégie Quelyos : source '%(src)s' (règle : %(rule)s).%(reassort)s",
-                     src=final_source.display_name,
-                     rule=strategie_appliquee.replace('_', ' ').capitalize(),
-                     reassort=" Réassort créé." if len(replenish_data[picking.id]) > 0 else "")
+            body = _(
+                "📦 Stratégie Quelyos : source '%(src)s' (règle : %(rule)s).%(reassort)s",
+                src=final_source.display_name,
+                rule=strategie_appliquee.replace('_', ' ').capitalize(),
+                reassort=" Réassort créé." if len(replenish_data[picking.id]) > 0 else ""
+            )
             picking.message_post(body=body)
 
+        # Création des réassorts internes nécessaires
         if replenish_data:
             for picking_id, moves_data in replenish_data.items():
                 picking_record = self.browse(picking_id)
@@ -194,7 +219,7 @@ class StockPicking(models.Model):
                     ("code", "=", "internal"),
                     ("warehouse_id", "=", picking_record.picking_type_id.warehouse_id.id)
                 ], limit=1) or self.env["stock.picking.type"].sudo().search([("code", "=", "internal")], limit=1)
-                
+
                 self.env["stock.picking"].sudo().create({
                     "picking_type_id": picking_type_internal.id if picking_type_internal else False,
                     "location_id": central.id,
@@ -202,7 +227,8 @@ class StockPicking(models.Model):
                     "origin": f"{picking_record.name or picking_record.origin or ''} / Réassort auto",
                     "move_ids_without_package": moves_data,
                 })
-        
+
+        # Réservation automatique
         try:
             self.action_assign()
             self._log_event(self, "assign", {"exp": "Réservation automatique réussie pour le recordset"})
@@ -225,14 +251,14 @@ class StockPicking(models.Model):
                 groupby=["location_id", "product_id"],
             )
             for quant in quants:
-                # Ajout d'une vérification pour s'assurer que les clés existent
+                # Vérification des clés
                 if 'product_id' in quant and 'location_id' in quant:
                     loc_id = quant['location_id'][0]
                     prod_id = quant['product_id'][0]
                     available_qty = quant.get('quantity', 0.0) - quant.get('reserved_quantity', 0.0)
                     res[loc_id][prod_id] = max(0.0, available_qty)
         else:
-            # Cette boucle est un goulot d'étranglement de performance et devrait être refactorisée
+            # Cette boucle est un goulot d'étranglement de performance et devrait être refactorisée si besoin
             for loc_id in location_ids:
                 if not loc_id:
                     continue
@@ -254,7 +280,7 @@ class StockPicking(models.Model):
         self.ensure_one()
         P = self.env["ir.config_parameter"].sudo()
         strict_names_enabled = P.get_param("quelyos_dynamic_strict_order_enabled", 'False') in ('1', 'True', 'true')
-        
+
         if not strict_names_enabled:
             return
 
@@ -263,9 +289,9 @@ class StockPicking(models.Model):
             domain += [("group_id", "=", self.group_id.id)]
         else:
             domain += [("origin", "=", self.origin)]
-            
+
         blockers = self.env['stock.picking'].search(domain, limit=1)
-        
+
         if blockers:
             raise UserError(_("Ordre strict : vous devez d'abord terminer '%s' (type : %s).")
                             % (blockers.display_name, blockers.picking_type_id.display_name))
