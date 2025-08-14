@@ -15,9 +15,7 @@ class StockPicking(models.Model):
     def create(self, vals_list):
         records = super().create(vals_list)
         # Traitement optimisé en masse des pickings sortants.
-        outgoing_pickings = records.filtered(lambda r: r.picking_type_id and r.picking_type_id.code == "outgoing")
-        if outgoing_pickings:
-            outgoing_pickings._quelyos_apply_auto_source_strategy()
+        # Nous allons traiter les pickings par la suite pour éviter les divisions.
         return records
 
     def action_assign(self):
@@ -70,9 +68,12 @@ class StockPicking(models.Model):
         if not all_locs:
             self._log_event(self, "skip", {"exp": "Aucun emplacement central ni boutique configuré"})
             return
+            
+        # NOUVELLE VÉRIFICATION : la logique ne s'applique pas aux commandes PoS.
+        pickings_to_process = self.filtered(lambda p: not p.picking_type_id.is_pos and not p.sale_id.is_from_pos)
 
         # Optimisation : Préchargement des données pour toutes les commandes
-        all_products = self.move_ids_without_package.product_id
+        all_products = pickings_to_process.move_ids_without_package.product_id
         all_product_ids = all_products.ids
         
         stock_data = self._get_available_quantities(all_product_ids, all_locs.ids, basis)
@@ -80,7 +81,7 @@ class StockPicking(models.Model):
         final_sources = {}
         replenish_data = defaultdict(list)
         
-        for picking in self:
+        for picking in pickings_to_process:
             if not picking.picking_type_id or picking.picking_type_id.code != "outgoing":
                 continue
             if only_web and not (picking.sale_id and getattr(picking.sale_id, "website_id", False)):
@@ -126,7 +127,9 @@ class StockPicking(models.Model):
                             free_sum += have
                             cover_sum += max(0.0, min(have, need))
                         if (free_sum > best_score) or (free_sum == best_score and cover_sum > best_tiebreak):
-                            best_score, best_tiebreak, best_shop = free_sum, cover_sum, shop
+                            best_score = free_sum
+                            best_tiebreak = cover_sum
+                            best_shop = shop
                 
                 if best_shop and check_full_coverage(best_shop):
                     final_source = best_shop
