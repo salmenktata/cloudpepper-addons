@@ -48,20 +48,26 @@ class ResConfigSettings(models.TransientModel):
         help="Saisir les noms (ou parties de noms) des boutiques séparés par '>' dans l'ordre de priorité."
     )
 
-    # Réassort interne : confirmation/réservation automatique
+    # Réassort : confirmation/réservation auto + auto-validation si 100% réservé
     quelyos_dynamic_auto_confirm_replenishment = fields.Boolean(
         string="Auto-confirmer et réserver le réassort",
         default=True,
         config_parameter="quelyos_dynamic_auto_confirm_replenishment",
         help="Après création du réassort interne, le module le confirme et tente la réservation automatique."
     )
-
-    # ✅ NOUVEAU : Auto-validation du réassort si 100% réservé
     quelyos_dynamic_auto_validate_replenishment = fields.Boolean(
         string="Auto-valider le réassort s'il est 100% réservé",
         default=True,
         config_parameter="quelyos_dynamic_auto_validate_replenishment",
         help="Si toutes les lignes du réassort sont entièrement réservées, valide automatiquement le picking interne."
+    )
+
+    # ✅ NOUVEAU : afficher un log de succès dans le chatter des livraisons
+    quelyos_dynamic_log_success = fields.Boolean(
+        string="Afficher un log de succès dans le chatter",
+        default=False,
+        config_parameter="quelyos_dynamic_log_success",
+        help="Si activé, poste un message 'Source retenue = …' dans le chatter des pickings sortants quand tout se passe bien."
     )
 
     # Persistance Many2one/Many2many via ICP

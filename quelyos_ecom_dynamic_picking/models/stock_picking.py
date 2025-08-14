@@ -9,11 +9,6 @@ _logger = logging.getLogger(__name__)
 class StockPicking(models.Model):
     _inherit = "stock.picking"
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        # Pas de ping de debug ici; on laisse le hook move/_action_assign garantir l'exécution
-        return super().create(vals_list)
-
     def action_assign(self):
         # On applique notre stratégie avant la réservation standard
         for picking in self:
@@ -38,7 +33,7 @@ class StockPicking(models.Model):
     def _quelyos_apply_strategy_if_needed(self):
         """
         Applique la stratégie AVANT la réservation:
-         1) vérifie l’éligibilité (log skip reason)
+         1) vérifie l’éligibilité (log skip reason uniquement pour sortants)
          2) annule toute réservation EXISTANTE (unreserve) AVANT calcul besoins
          3) calcule les besoins
          4) choisit la source (P1→P4) et recible les moves
@@ -49,7 +44,6 @@ class StockPicking(models.Model):
         ok, reason = self._quelyos_should_run_strategy_with_reason()
         if not ok:
             _logger.info("Quelyos DP: SKIP on %s -> %s", self.name, reason)
-            # On log seulement pour les sortants; les autres pickings (internal/incoming) ne spammeront plus
             if self.picking_type_id.code == "outgoing":
                 self._post_quelyos_log(_("Quelyos – Dynamic Picking: stratégie ignorée. Raison: <i>%s</i>.") % reason)
             return
@@ -128,11 +122,13 @@ class StockPicking(models.Model):
                     )
                     self._post_quelyos_log(msg)
 
-        # Log final (utile uniquement pour les sortants)
-        self._post_quelyos_log(_("Quelyos – Dynamic Picking: Source retenue = <b>%s</b>. Détails: %s") %
-                               (choice.display_name, details))
+        # ✅ Log final optionnel (affiché seulement si le paramètre est activé)
+        log_success = str(ICP.get_param("quelyos_dynamic_log_success") or "False") in ("1", "True", "true")
+        if log_success:
+            self._post_quelyos_log(_("Quelyos – Dynamic Picking: Source retenue = <b>%s</b>. Détails: %s") %
+                                   (choice.display_name, details))
 
-    # --- Helpers identiques ---
+    # --- Helpers ---
 
     def _quelyos_is_fully_reserved(self, picking):
         for mv in picking.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",)):
@@ -211,6 +207,7 @@ class StockPicking(models.Model):
                 cover_sum += max(0.0, min(have, need))
             return cover_sum, free_sum
 
+        # P1: Central couvre tout
         if central:
             if covers_all(central):
                 details.append(_("P1: Central couvre tout → %s") % central.display_name)
@@ -219,6 +216,7 @@ class StockPicking(models.Model):
                 cov = coverage_score(central)
                 details.append(_("P1: Central ne couvre pas tout (cover=%s, free=%s)") % (cov[0], cov[1]))
 
+        # P2: Ordre strict
         shops_list = shops
         if strict_enabled and strict_order_text:
             order_names = [x.strip() for x in strict_order_text.split(">") if x.strip()]
@@ -236,6 +234,7 @@ class StockPicking(models.Model):
                     return loc, "; ".join(details)
             details.append(_("P2: Aucune boutique de l'ordre strict ne couvre tout"))
 
+        # P3: Sans ordre strict → meilleure boutique qui couvre tout
         if not strict_enabled and shops:
             candidates = []
             for loc in shops:
@@ -249,6 +248,7 @@ class StockPicking(models.Model):
                 return best, "; ".join(details)
             details.append(_("P3: Aucune boutique ne couvre tout"))
 
+        # P4: Meilleure couverture globale (central vs boutiques)
         candidates = []
         if central:
             cov = coverage_score(central)
