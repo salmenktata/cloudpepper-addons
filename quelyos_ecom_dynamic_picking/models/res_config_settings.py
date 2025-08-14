@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from odoo import api, fields, models
 
-
 class ResConfigSettings(models.TransientModel):
     _inherit = "res.config.settings"
 
@@ -17,13 +16,9 @@ class ResConfigSettings(models.TransientModel):
         help="N'applique la stratégie qu'aux livraisons issues de commandes web (Sale Order avec website)."
     )
 
-    # Base de stock à utiliser
+    # Base de stock
     quelyos_dynamic_stock_basis = fields.Selection(
-        selection=[
-            ("free", "Quantité libre"),
-            ("onhand", "Physique (On-Hand)"),
-            ("forecast", "Prévisionnel"),
-        ],
+        selection=[("free", "Quantité libre"), ("onhand", "Physique (On-Hand)"), ("forecast", "Prévisionnel")],
         default="free",
         config_parameter="quelyos_dynamic_stock_basis",
         string="Base de stock utilisée"
@@ -61,7 +56,15 @@ class ResConfigSettings(models.TransientModel):
         help="Après création du réassort interne, le module le confirme et tente la réservation automatique."
     )
 
-    # --- Persistance Many2one/Many2many via ICP ---
+    # ✅ NOUVEAU : Auto-validation du réassort si 100% réservé
+    quelyos_dynamic_auto_validate_replenishment = fields.Boolean(
+        string="Auto-valider le réassort s'il est 100% réservé",
+        default=True,
+        config_parameter="quelyos_dynamic_auto_validate_replenishment",
+        help="Si toutes les lignes du réassort sont entièrement réservées, valide automatiquement le picking interne."
+    )
+
+    # Persistance Many2one/Many2many via ICP
     @api.model
     def get_values(self):
         res = super().get_values()
