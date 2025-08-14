@@ -19,6 +19,12 @@ class StockPicking(models.Model):
 
     # Stratégie complète
     def _quelyos_apply_strategy_if_needed(self):
+        """
+        Applique la stratégie de choix de source AVANT la réservation :
+          - si nécessaire, annule toute réservation existante pour repartir proprement
+          - recible la source des mouvements
+          - si source != central : crée réassort interne, auto-confirme/réserve (+ auto-valide si 100% réservé et option activée)
+        """
         self.ensure_one()
         if not self._quelyos_should_run_strategy():
             return
@@ -40,6 +46,20 @@ class StockPicking(models.Model):
         if not choice:
             return
 
+        # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        # ✅ CORRECTION PROBLÈME #1 : libérer toutes les réservations existantes
+        moves_to_unreserve = self.move_ids_without_package.filtered(
+            lambda m: m.state not in ('cancel',) and (m.reserved_availability or 0.0) > 0.0
+        )
+        if moves_to_unreserve:
+            try:
+                moves_to_unreserve._do_unreserve()
+            except Exception as e:
+                _logger.exception("Unreserve failed on picking %s: %s", self.name, e)
+                # On continue tout de même, mais on journalise
+                self.message_post(body=_("Échec libération des réservations existantes : %s") % e)
+        # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
         # Re-cible la source
         self._quelyos_retarget_moves(choice)
 
@@ -57,7 +77,6 @@ class StockPicking(models.Model):
                             repick.action_assign()
                             # Option : auto-valider si 100% réservé
                             if auto_validate and self._quelyos_is_fully_reserved(repick):
-                                # Remplir qty_done = réservé pour éviter le wizard
                                 if hasattr(repick, "action_set_quantities_to_reservation"):
                                     repick.action_set_quantities_to_reservation()
                                 repick.button_validate()
@@ -88,7 +107,6 @@ class StockPicking(models.Model):
     def _quelyos_is_fully_reserved(self, picking):
         """Vrai si toutes les lignes sont entièrement réservées (en UoM des mouvements)."""
         for mv in picking.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",)):
-            # Compare reserved_availability à la demande
             rounding = mv.product_uom.rounding or 1e-6
             if (mv.product_uom_qty - (mv.reserved_availability or 0.0)) > rounding:
                 return False
