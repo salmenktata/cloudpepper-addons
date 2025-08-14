@@ -3,9 +3,13 @@
     <record id="res_config_settings_view_form_inherit_quelyos_dynamic_picking" model="ir.ui.view">
         <field name="name">res.config.settings.view.form.inherit.quelyos.dynamic.picking</field>
         <field name="model">res.config.settings</field>
+        <!-- On continue d'hériter de la vue Sales Settings -->
         <field name="inherit_id" ref="sale.res_config_settings_view_form"/>
+        <!-- Donne une prio basse pour ne pas gêner d'autres addons -->
+        <field name="priority" eval="90"/>
         <field name="arch" type="xml">
-            <xpath expr="//sheet" position="inside">
+            <!-- ✅ Ancrage ultra-robuste : sur <form>, présent dans tous les thèmes/layouts -->
+            <xpath expr="//form" position="inside">
                 <div class="app_settings_block" data-string="Quelyos – Dynamic Picking" data-key="quelyos_dynamic_picking">
                     <h2>Quelyos – Dynamic Picking</h2>
                     <div class="row mt16 o_settings_container">
