@@ -9,36 +9,14 @@ _logger = logging.getLogger(__name__)
 class StockPicking(models.Model):
     _inherit = "stock.picking"
 
-    # --- NOUVEAU : forcer la stratégie dès la création d'un picking sortant ---
     @api.model_create_multi
     def create(self, vals_list):
-        pickings = super().create(vals_list)
-        for p in pickings:
-            try:
-                if p.picking_type_id and p.picking_type_id.code == "outgoing":
-                    # Ping visible pour confirmer l'exécution à la création
-                    p.sudo().message_post(
-                        body=_("Quelyos – Dynamic Picking (hook create): picking sortant détecté, application planifiée."),
-                        message_type="comment",
-                        subtype_xmlid="mail.mt_note",
-                    )
-                    p._quelyos_apply_strategy_if_needed()
-            except Exception as e:
-                _logger.exception("Quelyos DP: erreur dans create sur %s: %s", p.name or 'NEW', e)
-        return pickings
+        # Pas de ping de debug ici; on laisse le hook move/_action_assign garantir l'exécution
+        return super().create(vals_list)
 
-    # Entrée standard (bouton "Vérifier la dispo", confirmation SO)
     def action_assign(self):
+        # On applique notre stratégie avant la réservation standard
         for picking in self:
-            try:
-                # Ping visible pour confirmer l'exécution via action_assign
-                picking.sudo().message_post(
-                    body=_("Quelyos – Dynamic Picking (hook action_assign): passage avant réservation."),
-                    message_type="comment",
-                    subtype_xmlid="mail.mt_note",
-                )
-            except Exception:
-                pass
             picking._quelyos_apply_strategy_if_needed()
         return super().action_assign()
 
@@ -71,7 +49,9 @@ class StockPicking(models.Model):
         ok, reason = self._quelyos_should_run_strategy_with_reason()
         if not ok:
             _logger.info("Quelyos DP: SKIP on %s -> %s", self.name, reason)
-            self._post_quelyos_log(_("Quelyos – Dynamic Picking: stratégie ignorée. Raison: <i>%s</i>.") % reason)
+            # On log seulement pour les sortants; les autres pickings (internal/incoming) ne spammeront plus
+            if self.picking_type_id.code == "outgoing":
+                self._post_quelyos_log(_("Quelyos – Dynamic Picking: stratégie ignorée. Raison: <i>%s</i>.") % reason)
             return
 
         ICP = self.env["ir.config_parameter"].sudo()
@@ -91,8 +71,6 @@ class StockPicking(models.Model):
         if moves_to_unreserve:
             try:
                 moves_to_unreserve._do_unreserve()
-                # Ping pour diagnostiquer
-                self._post_quelyos_log(_("Quelyos – Dynamic Picking: réservations existantes libérées avant reciblage."))
             except Exception as e:
                 _logger.exception("Unreserve failed on picking %s: %s", self.name, e)
                 self._post_quelyos_log(_("Échec libération des réservations existantes : %s") % e)
@@ -150,11 +128,11 @@ class StockPicking(models.Model):
                     )
                     self._post_quelyos_log(msg)
 
-        # Log final
+        # Log final (utile uniquement pour les sortants)
         self._post_quelyos_log(_("Quelyos – Dynamic Picking: Source retenue = <b>%s</b>. Détails: %s") %
                                (choice.display_name, details))
 
-    # --- Helpers ---
+    # --- Helpers identiques ---
 
     def _quelyos_is_fully_reserved(self, picking):
         for mv in picking.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",)):
