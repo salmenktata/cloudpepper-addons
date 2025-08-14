@@ -70,7 +70,7 @@ class StockPicking(models.Model):
             return
             
         # NOUVELLE VÉRIFICATION : la logique ne s'applique pas aux commandes PoS.
-        pickings_to_process = self.filtered(lambda p: not p.sale_id or not p.sale_id.is_from_pos)
+        pickings_to_process = self.filtered(lambda p: not p.sale_id or not self.env['pos.order'].search([('sale_order_ids', 'in', p.sale_id.ids)]))
 
         # Optimisation : Préchargement des données pour toutes les commandes
         all_products = pickings_to_process.move_ids_without_package.product_id
