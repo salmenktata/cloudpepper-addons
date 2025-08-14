@@ -1,4 +1,4 @@
 # -*- coding: utf-8 -*-
 from . import res_config_settings
 from . import stock_picking
-from . import stock_move  # ✅ hook bas-niveau pour garantir l’exécution de la stratégie
+from . import stock_move  # garantit l'exécution avant la réservation bas-niveau
