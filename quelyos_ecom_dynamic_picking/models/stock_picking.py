@@ -9,12 +9,42 @@ _logger = logging.getLogger(__name__)
 class StockPicking(models.Model):
     _inherit = "stock.picking"
 
+    # --- NOUVEAU : forcer la stratégie dès la création d'un picking sortant ---
+    @api.model_create_multi
+    def create(self, vals_list):
+        pickings = super().create(vals_list)
+        for p in pickings:
+            try:
+                if p.picking_type_id and p.picking_type_id.code == "outgoing":
+                    # Ping visible pour confirmer l'exécution à la création
+                    p.sudo().message_post(
+                        body=_("Quelyos – Dynamic Picking (hook create): picking sortant détecté, application planifiée."),
+                        message_type="comment",
+                        subtype_xmlid="mail.mt_note",
+                    )
+                    p._quelyos_apply_strategy_if_needed()
+            except Exception as e:
+                _logger.exception("Quelyos DP: erreur dans create sur %s: %s", p.name or 'NEW', e)
+        return pickings
+
     # Entrée standard (bouton "Vérifier la dispo", confirmation SO)
     def action_assign(self):
         for picking in self:
+            try:
+                # Ping visible pour confirmer l'exécution via action_assign
+                picking.sudo().message_post(
+                    body=_("Quelyos – Dynamic Picking (hook action_assign): passage avant réservation."),
+                    message_type="comment",
+                    subtype_xmlid="mail.mt_note",
+                )
+            except Exception:
+                pass
             picking._quelyos_apply_strategy_if_needed()
         return super().action_assign()
 
+    # -------------------------------------------------------------------------
+    #  STRATÉGIE
+    # -------------------------------------------------------------------------
     def _post_quelyos_log(self, body):
         """Poste dans le chatter du picking + de la commande de vente si dispo."""
         try:
@@ -31,7 +61,7 @@ class StockPicking(models.Model):
         """
         Applique la stratégie AVANT la réservation:
          1) vérifie l’éligibilité (log skip reason)
-         2) annule toute réservation EXISTANTE (unreserve)  ✅ (avant calcul des besoins)
+         2) annule toute réservation EXISTANTE (unreserve) AVANT calcul besoins
          3) calcule les besoins
          4) choisit la source (P1→P4) et recible les moves
          5) crée un réassort central->source si besoin (auto confirm/assign [+ auto validate] selon paramètres)
@@ -54,18 +84,20 @@ class StockPicking(models.Model):
             self._post_quelyos_log(_("Quelyos – Dynamic Picking: ignoré (aucune configuration d'emplacements définie)."))
             return
 
-        # (1) ✅ Unreserve AVANT de calculer les besoins pour évacuer toute réservation préalable
+        # (1) Unreserve AVANT de calculer les besoins
         moves_to_unreserve = self.move_ids_without_package.filtered(
             lambda m: m.state not in ('cancel',) and (m.reserved_availability or 0.0) > 0.0
         )
         if moves_to_unreserve:
             try:
                 moves_to_unreserve._do_unreserve()
+                # Ping pour diagnostiquer
+                self._post_quelyos_log(_("Quelyos – Dynamic Picking: réservations existantes libérées avant reciblage."))
             except Exception as e:
                 _logger.exception("Unreserve failed on picking %s: %s", self.name, e)
                 self._post_quelyos_log(_("Échec libération des réservations existantes : %s") % e)
 
-        # (2) Besoins nets (désormais reserved_availability = 0)
+        # (2) Besoins nets
         req = self._quelyos_requirements_per_product()
         if not req:
             self._post_quelyos_log(_("Quelyos – Dynamic Picking: ignoré (aucun besoin net à réserver)."))
@@ -118,7 +150,7 @@ class StockPicking(models.Model):
                     )
                     self._post_quelyos_log(msg)
 
-        # Log stratégie (toujours visible)
+        # Log final
         self._post_quelyos_log(_("Quelyos – Dynamic Picking: Source retenue = <b>%s</b>. Détails: %s") %
                                (choice.display_name, details))
 
@@ -164,7 +196,6 @@ class StockPicking(models.Model):
         return central if central and central.exists() else False, shops_rs.filtered(lambda l: l.exists())
 
     def _quelyos_requirements_per_product(self):
-        """Besoins nets PAR PRODUIT (après unreserve, donc reserved_availability=0)."""
         req = defaultdict(float)
         for mv in self.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",) and m.product_id and m.product_id.type in ("product",)):
             need_in_move_uom = max(0.0, mv.product_uom_qty - (mv.reserved_availability or 0.0))
