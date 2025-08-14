@@ -17,6 +17,7 @@ class StockPicking(models.Model):
     def create(self, vals_list):
         records = super().create(vals_list)
         # Traitement optimisé en masse des pickings sortants.
+        # Nous allons traiter les pickings par la suite pour éviter les divisions.
         return records
 
     def action_assign(self):
@@ -87,7 +88,7 @@ class StockPicking(models.Model):
             except Exception:
                 pos_picktype_ids = set()
 
-        # 2) Relations réelles avec pos.order mais uniquement si les champs existent
+        # 2) Relations réelles avec pos.order
         if 'pos.order' in self.env:
             PosOrder = self.env['pos.order'].sudo()
             fields_pos = getattr(PosOrder, '_fields', {})
@@ -363,11 +364,16 @@ class StockPicking(models.Model):
 
 class SaleOrder(models.Model):
     _inherit = "sale.order"
+    
+    @api.model
+    def create(self, vals):
+        res = super(SaleOrder, self).create(vals)
+        if 'pos_order_id' not in self.env.context and res.picking_ids:
+            res.picking_ids._quelyos_apply_auto_source_strategy()
+        return res
 
     def _action_confirm(self):
         res = super()._action_confirm()
-        # On cible uniquement les sortants
         pickings = self.mapped("picking_ids").filtered(lambda p: p.picking_type_id.code == "outgoing")
-        # Application de la stratégie (gère elle-même l'exclusion PoS)
         pickings._quelyos_apply_auto_source_strategy()
         return res
