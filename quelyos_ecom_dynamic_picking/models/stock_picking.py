@@ -46,7 +46,8 @@ class StockPicking(models.Model):
     def _quelyos_apply_auto_source_strategy(self):
         """
         Applique la stratégie de sélection de l'emplacement source pour les livraisons sortantes,
-        en excluant proprement les flux issus du PoS (sans champs custom et sans référencer de champs inexistants).
+        en excluant proprement les flux issus du PoS (sans champs custom ni référence à des champs inexistants)
+        et en prenant en compte les sous-emplacements (somme des enfants).
         """
         P = self.env["ir.config_parameter"].sudo()
 
@@ -68,7 +69,7 @@ class StockPicking(models.Model):
         shops_ids = [int(x) for x in shop_ids_csv.split(",") if x]
 
         Loc = self.env["stock.location"].sudo()
-        central = Loc.browse(central_id) if central_id else self.env['stock.location'].sudo()
+        central = Loc.browse(central_id) if central_id else self.env['stock.location'].browse()
         shops = Loc.browse(shops_ids)
         all_locs = central + shops
 
@@ -88,7 +89,7 @@ class StockPicking(models.Model):
             except Exception:
                 pos_picktype_ids = set()
 
-        # 2) Relations réelles avec pos.order
+        # 2) Relations réelles avec pos.order mais uniquement si les champs existent
         if 'pos.order' in self.env:
             PosOrder = self.env['pos.order'].sudo()
             fields_pos = getattr(PosOrder, '_fields', {})
@@ -145,11 +146,35 @@ class StockPicking(models.Model):
         )
         # --------- FIN EXCLUSION PoS ---------
 
-        # Préchargement des produits
+        # Préchargement des produits (IDs)
         all_products = pickings_to_process.move_ids_without_package.product_id
         all_product_ids = all_products.ids
 
-        stock_data = self._get_available_quantities(all_product_ids, all_locs.ids, basis)
+        # Charger les stocks disponibles (clés = emplacements EXACTS)
+        stock_data = self._get_available_quantities(all_product_ids, (central | shops).ids, basis)
+
+        # --- PATCH: pré-calcul des descendants pour sommer les enfants ---
+        # Pour chaque "central" et chaque boutique, récupérer tous les descendants (eux-mêmes inclus)
+        descendants_map = {}
+        for loc in (central | shops):
+            if loc:
+                # 'child_of' inclut le parent
+                descendants_map[loc.id] = Loc.search([('id', 'child_of', loc.id)]).ids
+
+        def total_available_for_group(loc, product_id):
+            """Somme les dispos de loc et de tous ses enfants dans stock_data."""
+            if not loc:
+                return 0.0
+            child_ids = descendants_map.get(loc.id, [loc.id])
+            total = 0.0
+            for lid in child_ids:
+                total += stock_data.get(lid, {}).get(product_id, 0.0)
+            return total
+
+        def group_covers_all(loc, req_dict):
+            """Vérifie si loc (et ses enfants) couvrent toutes les qtes requises."""
+            return all(total_available_for_group(loc, pid) >= need for pid, need in req_dict.items())
+        # --- FIN PATCH ---
 
         final_sources = {}
         replenish_data = defaultdict(list)
@@ -162,6 +187,7 @@ class StockPicking(models.Model):
 
             self._log_event(picking, "start_strategy", {"exp": "Début de la stratégie de sélection de la source"})
 
+            # Besoins du picking en UoM produit
             req = {
                 move.product_id.id: move.product_uom._compute_quantity(move.product_uom_qty, move.product_id.uom_id)
                 for move in picking.move_ids_without_package
@@ -170,35 +196,32 @@ class StockPicking(models.Model):
                 self._log_event(picking, "no_moves", {"exp": "Aucun mouvement de stock, skip"})
                 continue
 
-            def check_full_coverage(location):
-                return all(stock_data.get(location.id, {}).get(pid, 0.0) >= need for pid, need in req.items())
-
+            # 1) Central si couverture totale (via somme des enfants)
+            central_ok = group_covers_all(central, req) if central else False
             final_source = self.env['stock.location']
             strategie_appliquee = ""
 
-            # 1) Central si couverture complète
-            central_ok = check_full_coverage(central) if central else False
             if central_ok:
                 final_source = central
                 strategie_appliquee = "central_complet"
             else:
-                # 2) Boutique prioritaire par nom (ordre strict) si complète
+                # 2) Boutique prioritaire par nom (ordre strict) si complète (groupe)
                 best_shop = self.env['stock.location']
                 if strict_names_enabled and priority_names:
                     for name in priority_names:
                         shop = shops.filtered(lambda l: (l.name or "").strip().lower() == name)
-                        if shop and check_full_coverage(shop):
+                        if shop and group_covers_all(shop, req):
                             best_shop = shop
                             break
 
-                # 3) Sinon, meilleure boutique par score (free_sum / cover_sum)
+                # 3) Sinon, meilleure boutique par score (free_sum / cover_sum) en groupe
                 if not best_shop:
                     best_score = -1.0
                     best_tiebreak = -1.0
                     for shop in shops:
                         free_sum, cover_sum = 0.0, 0.0
                         for pid, need in req.items():
-                            have = stock_data.get(shop.id, {}).get(pid, 0.0)
+                            have = total_available_for_group(shop, pid)
                             free_sum += have
                             cover_sum += max(0.0, min(have, need))
                         if (free_sum > best_score) or (free_sum == best_score and cover_sum > best_tiebreak):
@@ -206,19 +229,21 @@ class StockPicking(models.Model):
                             best_tiebreak = cover_sum
                             best_shop = shop
 
-                if best_shop and check_full_coverage(best_shop):
+                if best_shop and group_covers_all(best_shop, req):
                     final_source = best_shop
                     strategie_appliquee = "meilleure_boutique_ou_ordre_strict_complet"
                 else:
-                    # 4) Meilleure couverture globale (partielle)
+                    # 4) Meilleure couverture globale (partielle) en groupe
                     best_coverage_loc = self.env['stock.location']
                     best_coverage_score = -1.0
-                    for loc in all_locs:
+                    # On évalue central + shops comme candidats
+                    for loc in (central | shops):
                         if not loc:
                             continue
-                        current_coverage_score = sum(
-                            min(stock_data.get(loc.id, {}).get(pid, 0.0), need) for pid, need in req.items()
-                        )
+                        current_coverage_score = 0.0
+                        for pid, need in req.items():
+                            have = total_available_for_group(loc, pid)
+                            current_coverage_score += min(have, need)
                         if current_coverage_score > best_coverage_score:
                             best_coverage_score = current_coverage_score
                             best_coverage_loc = loc
@@ -239,7 +264,7 @@ class StockPicking(models.Model):
             # Réassort interne si source ≠ central
             if final_source and central and final_source.id != central.id:
                 for pid, need in req.items():
-                    have = stock_data.get(final_source.id, {}).get(pid, 0.0)
+                    have = total_available_for_group(final_source, pid)
                     missing = max(0.0, need - have)
                     if missing > 0:
                         prod = self.env["product.product"].browse(pid)
@@ -300,6 +325,7 @@ class StockPicking(models.Model):
     def _get_available_quantities(self, product_ids, location_ids, basis):
         """
         Retourne {location_id: {product_id: qty}} pour tous les produits et emplacements.
+        (les clés sont les emplacements EXACTS retournés par read_group)
         """
         res = defaultdict(lambda: defaultdict(float))
         if not product_ids or not location_ids:
@@ -364,16 +390,20 @@ class StockPicking(models.Model):
 
 class SaleOrder(models.Model):
     _inherit = "sale.order"
-    
+
     @api.model
     def create(self, vals):
         res = super(SaleOrder, self).create(vals)
+        # Ne pas déclencher depuis un contexte PoS explicite
         if 'pos_order_id' not in self.env.context and res.picking_ids:
+            # La stratégie interne gère elle-même l'exclusion PoS et la somme des enfants
             res.picking_ids._quelyos_apply_auto_source_strategy()
         return res
 
     def _action_confirm(self):
         res = super()._action_confirm()
+        # On cible uniquement les sortants
         pickings = self.mapped("picking_ids").filtered(lambda p: p.picking_type_id.code == "outgoing")
+        # Application de la stratégie (gère elle-même l'exclusion PoS + somme enfants)
         pickings._quelyos_apply_auto_source_strategy()
         return res
