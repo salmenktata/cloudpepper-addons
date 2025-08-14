@@ -2,7 +2,7 @@
 {
     "name": "Quelyos – Dynamic Picking",
     "summary": "Sélection dynamique de l’emplacement source + réassort interne auto pour livraisons sortantes",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "category": "Inventory/Delivery",
     "author": "Qelyos",
     "website": "https://quelyos.com",
