@@ -122,11 +122,20 @@ class StockPicking(models.Model):
                     )
                     self._post_quelyos_log(msg)
 
-        # ✅ Log final optionnel (affiché seulement si le paramètre est activé)
-        log_success = str(ICP.get_param("quelyos_dynamic_log_success") or "False") in ("1", "True", "true")
+        # ✅ Log final optionnel (lecture robuste du param système)
+        raw = ICP.get_param("quelyos_dynamic_log_success")
+        log_success = False
+        if raw is not None:
+            s = str(raw).strip().lower()
+            log_success = s in ("1", "true", "t", "yes", "y", "on")
         if log_success:
-            self._post_quelyos_log(_("Quelyos – Dynamic Picking: Source retenue = <b>%s</b>. Détails: %s") %
-                                   (choice.display_name, details))
+            try:
+                self._post_quelyos_log(
+                    _("Quelyos – Dynamic Picking: Source retenue = <b>%s</b>. Détails: %s") %
+                    (choice.display_name, details)
+                )
+            except Exception as e:
+                _logger.info("Quelyos DP: impossible de poster le log de succès sur %s: %s", self.name, e)
 
     # --- Helpers ---
 
@@ -292,9 +301,9 @@ class StockPicking(models.Model):
         if not moves_vals:
             return False
 
-        ptype = self.env["stock.picking.type"].search(
+        ptype = self.env["stock.picking_type"].search(
             [("code", "=", "internal"), ("company_id", "=", self.company_id.id)], limit=1
-        ) or self.env["stock.picking.type"].search([("code", "=", "internal")], limit=1)
+        ) or self.env["stock.picking_type"].search([("code", "=", "internal")], limit=1)
         if not ptype:
             raise UserError(_("Aucun type de picking interne trouvé (code 'internal')."))
 
