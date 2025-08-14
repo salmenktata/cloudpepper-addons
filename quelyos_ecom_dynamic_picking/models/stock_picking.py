@@ -10,26 +10,52 @@ class StockPicking(models.Model):
     _inherit = "stock.picking"
 
     def action_assign(self):
-        # On applique notre stratégie avant la réservation standard
+        # Appliquer la stratégie avant la réservation standard
         for picking in self:
             picking._quelyos_apply_strategy_if_needed()
         return super().action_assign()
 
     # -------------------------------------------------------------------------
+    #  LOGGING CHATTTER ROBUSTE
+    # -------------------------------------------------------------------------
+    def _safe_message_post(self, record, body):
+        """
+        Poste un message dans le chatter de 'record' de façon robuste :
+        - tente avec subtype_id = mail.mt_note
+        - sinon, poste sans subtype (fallback)
+        Retourne l'ID du mail.message créé (ou False).
+        """
+        if not record:
+            return False
+        try:
+            subtype = None
+            try:
+                subtype = self.env.ref("mail.mt_note").id
+            except Exception:
+                subtype = None
+
+            kwargs = {"body": body, "message_type": "comment"}
+            if subtype:
+                kwargs["subtype_id"] = subtype
+
+            msg = record.sudo().message_post(**kwargs)
+            mid = getattr(msg, "id", False)
+            _logger.info("Quelyos DP: message_post on %s -> mid=%s", record.display_name, mid)
+            return mid or False
+        except Exception as e:
+            _logger.exception("Quelyos DP: message_post failed on %s: %s", getattr(record, "display_name", record), e)
+            return False
+
+    def _post_quelyos_log(self, body):
+        """Poste sur le picking + la sale order (si liée), avec fallback robuste."""
+        self.ensure_one()
+        self._safe_message_post(self, body)
+        if self.sale_id:
+            self._safe_message_post(self.sale_id, body)
+
+    # -------------------------------------------------------------------------
     #  STRATÉGIE
     # -------------------------------------------------------------------------
-    def _post_quelyos_log(self, body):
-        """Poste dans le chatter du picking + de la commande de vente si dispo."""
-        try:
-            self.sudo().message_post(body=body, message_type="comment", subtype_xmlid="mail.mt_note")
-        except Exception:
-            _logger.info("Chatter post failed on picking %s", self.name)
-        if self.sale_id:
-            try:
-                self.sale_id.sudo().message_post(body=body, message_type="comment", subtype_xmlid="mail.mt_note")
-            except Exception:
-                _logger.info("Chatter post failed on sale order %s", self.sale_id.name)
-
     def _quelyos_apply_strategy_if_needed(self):
         """
         Applique la stratégie AVANT la réservation:
@@ -103,9 +129,9 @@ class StockPicking(models.Model):
                                 repick.button_validate()
                         except Exception as e:
                             _logger.exception("Auto-confirm/assign/validate failed on replenishment %s: %s", repick.name, e)
-                            repick.sudo().message_post(
-                                body=_("Échec auto (confirm/réservation/validation) : %s") % e,
-                                message_type="comment", subtype_xmlid="mail.mt_note"
+                            self._safe_message_post(
+                                repick,
+                                _("Échec auto (confirm/réservation/validation) : %s") % e
                             )
 
                     msg = _(
@@ -122,20 +148,17 @@ class StockPicking(models.Model):
                     )
                     self._post_quelyos_log(msg)
 
-        # ✅ Log final optionnel (lecture robuste du param système)
+        # (6) Log final optionnel : lecture TOLÉRANTE du param système
         raw = ICP.get_param("quelyos_dynamic_log_success")
         log_success = False
         if raw is not None:
             s = str(raw).strip().lower()
             log_success = s in ("1", "true", "t", "yes", "y", "on")
         if log_success:
-            try:
-                self._post_quelyos_log(
-                    _("Quelyos – Dynamic Picking: Source retenue = <b>%s</b>. Détails: %s") %
-                    (choice.display_name, details)
-                )
-            except Exception as e:
-                _logger.info("Quelyos DP: impossible de poster le log de succès sur %s: %s", self.name, e)
+            self._post_quelyos_log(
+                _("Quelyos – Dynamic Picking: Source retenue = <b>%s</b>. Détails: %s") %
+                (choice.display_name, details)
+            )
 
     # --- Helpers ---
 
@@ -317,8 +340,5 @@ class StockPicking(models.Model):
             "note": _("Créé automatiquement par Quelyos – Dynamic Picking."),
         })
         _logger.info("Réassort interne créé %s pour %s", repick.name, self.name)
-        repick.sudo().message_post(
-            body=_("Réassort créé automatiquement pour <b>%s</b>.") % self.name,
-            message_type="comment", subtype_xmlid="mail.mt_note"
-        )
+        self._safe_message_post(repick, _("Réassort créé automatiquement pour <b>%s</b>.") % self.name)
         return repick
