@@ -45,7 +45,7 @@ class StockPicking(models.Model):
     def _quelyos_apply_auto_source_strategy(self):
         """
         Applique la stratégie de sélection de l'emplacement source pour les livraisons sortantes,
-        en excluant proprement les flux issus du PoS (sans champs custom).
+        en excluant proprement les flux issus du PoS (sans champs custom et sans référencer de champs inexistants).
         """
         P = self.env["ir.config_parameter"].sudo()
 
@@ -75,32 +75,70 @@ class StockPicking(models.Model):
             self._log_event(self, "skip", {"exp": "Aucun emplacement central ni boutique configuré"})
             return
 
-        # ----------- EXCLUSION DES FLUX PoS (ROBUSTE) -----------
+        # ----------- EXCLUSION DES FLUX PoS (ROBUSTE & DÉFENSIVE) -----------
         pos_picking_ids = set()
         pos_sale_ids = set()
         pos_picktype_ids = set()
 
-        # 1) Types d'opérations utilisés par le PoS (optionnel mais utile)
+        # 1) Types d'opérations utilisés par le PoS (optionnel)
         if 'pos.config' in self.env:
-            pos_picktype_ids = set(self.env['pos.config'].sudo().search([]).mapped('picking_type_id').ids)
+            try:
+                pos_picktype_ids = set(self.env['pos.config'].sudo().search([]).mapped('picking_type_id').ids)
+            except Exception:
+                pos_picktype_ids = set()
 
-        # 2) Relations réelles avec pos.order
+        # 2) Relations réelles avec pos.order mais uniquement si les champs existent
         if 'pos.order' in self.env:
-            sale_ids = self.mapped('sale_id').ids or []
-            domain = ['|', ('picking_ids', 'in', self.ids), ('sale_order_ids', 'in', sale_ids)]
-            pos_orders = self.env['pos.order'].sudo().search(domain)
-            if pos_orders:
-                pos_picking_ids = set(pos_orders.mapped('picking_ids').ids)
-                pos_sale_ids = set(pos_orders.mapped('sale_order_ids').ids)
+            PosOrder = self.env['pos.order'].sudo()
+            fields_pos = getattr(PosOrder, '_fields', {})
 
-        # Filtrage final (sans champs custom)
+            pos_orders = PosOrder.browse()  # ensemble vide
+
+            # a) via picking_ids -> fiable si le champ existe
+            if 'picking_ids' in fields_pos and self.ids:
+                try:
+                    pos_orders |= PosOrder.search([('picking_ids', 'in', self.ids)])
+                except Exception:
+                    pass
+
+            # b) via sale_order_ids ou sale_id -> on choisit ce qui existe
+            sale_ids = self.mapped('sale_id').ids or []
+            if sale_ids:
+                if 'sale_order_ids' in fields_pos:
+                    try:
+                        pos_orders |= PosOrder.search([('sale_order_ids', 'in', sale_ids)])
+                    except Exception:
+                        pass
+                elif 'sale_id' in fields_pos:
+                    try:
+                        pos_orders |= PosOrder.search([('sale_id', 'in', sale_ids)])
+                    except Exception:
+                        pass
+
+            # Collecte des ids liés
+            if pos_orders:
+                if 'picking_ids' in fields_pos:
+                    try:
+                        pos_picking_ids = set(pos_orders.mapped('picking_ids').ids)
+                    except Exception:
+                        pos_picking_ids = set()
+                # pour les ventes : préférer sale_order_ids si dispo, sinon sale_id
+                if 'sale_order_ids' in fields_pos:
+                    try:
+                        pos_sale_ids = set(pos_orders.mapped('sale_order_ids').ids)
+                    except Exception:
+                        pos_sale_ids = set()
+                elif 'sale_id' in fields_pos:
+                    try:
+                        pos_sale_ids = set(pos_orders.mapped('sale_id').ids)
+                    except Exception:
+                        pos_sale_ids = set()
+
+        # Filtrage final (sans champs custom et sans hypothèses)
         pickings_to_process = self.filtered(
             lambda p: (
-                # pas un picking PoS par type (optionnel)
                 (not p.picking_type_id or p.picking_type_id.id not in pos_picktype_ids) and
-                # pas explicitement un picking déjà rattaché à un pos.order
                 (p.id not in pos_picking_ids) and
-                # pas une vente rattachée à un pos.order
                 (not p.sale_id or p.sale_id.id not in pos_sale_ids)
             )
         )
