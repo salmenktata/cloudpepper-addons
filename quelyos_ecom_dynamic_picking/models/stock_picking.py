@@ -61,7 +61,8 @@ class StockPicking(models.Model):
         ok, reason = self._quelyos_should_run_strategy_with_reason()
         if not ok:
             _logger.info("Quelyos DP: SKIP on %s -> %s", self.name, reason)
-            if self.picking_type_id.code == "outgoing":
+            # On loggue seulement pour les flux sortants/PICK pour éviter du bruit inutile
+            if self.picking_type_id.code in ("outgoing", "internal"):
                 self._post_quelyos_log(_("Quelyos – Dynamic Picking: stratégie ignorée. Raison: <i>%s</i>.") % reason)
             return
 
@@ -157,29 +158,32 @@ class StockPicking(models.Model):
         return True
 
     def _quelyos_should_run_strategy_with_reason(self):
-    self.ensure_one()
-    ICP = self.env["ir.config_parameter"].sudo()
+        """
+        Éligibilité:
+          - Livraisons sortantes (code == 'outgoing')
+          - OU 1re étape PICK d'un flux en 2 étapes (code == 'internal' et sequence_code == 'PICK')
+        + Respect de l'option 'Limiter aux commandes eCommerce' si activée.
+        """
+        self.ensure_one()
+        ICP = self.env["ir.config_parameter"].sudo()
 
-    enabled = str(ICP.get_param("quelyos_dynamic_enabled") or "False") in ("1", "True", "true")
-    if not enabled:
-        return False, _("stratégie désactivée dans Paramètres > Ventes")
+        enabled = str(ICP.get_param("quelyos_dynamic_enabled") or "False") in ("1", "True", "true")
+        if not enabled:
+            return False, _("stratégie désactivée dans Paramètres > Ventes")
 
-    # ✅ Autoriser la stratégie sur :
-    # - les livraisons sortantes (code == 'outgoing')
-    # - le picking de 1ʳᵉ étape d'un flux en 2 étapes (type 'internal' avec sequence_code == 'PICK')
-    pt = self.picking_type_id
-    is_out = (pt.code == "outgoing")
-    is_pick_step = (pt.code == "internal" and (pt.sequence_code or "").upper() == "PICK")
-    if not (is_out or is_pick_step):
-        return False, _("picking non éligible (ni 'outgoing', ni étape PICK interne)")
+        pt = self.picking_type_id
+        is_outgoing = (pt.code == "outgoing")
+        is_pick_step = (pt.code == "internal" and (pt.sequence_code or "").upper() == "PICK")
+        if not (is_outgoing or is_pick_step):
+            return False, _("picking non éligible (ni 'outgoing', ni étape PICK interne)")
 
-    ecom_only = str(ICP.get_param("quelyos_dynamic_ecom_only") or "False") in ("1", "True", "true")
-    if ecom_only:
-        so = self.sale_id
-        if not so or not getattr(so, "website_id", False):
-            return False, _("option 'Limiter aux commandes eCommerce' activée et ce picking ne provient pas d'une commande web")
-    return True, ""
+        ecom_only = str(ICP.get_param("quelyos_dynamic_ecom_only") or "False") in ("1", "True", "true")
+        if ecom_only:
+            so = self.sale_id
+            if not so or not getattr(so, "website_id", False):
+                return False, _("option 'Limiter aux commandes eCommerce' activée et ce picking ne provient pas d'une commande web")
 
+        return True, ""
 
     def _quelyos_get_locations_from_conf(self):
         ICP = self.env["ir.config_parameter"].sudo()
