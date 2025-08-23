@@ -13,18 +13,13 @@ class StockPicking(models.Model):
         # Appliquer la stratégie avant la réservation standard
         for picking in self:
             picking._quelyos_apply_strategy_if_needed()
-        return super().action_assign()
+        # 👉 Contexte spécial pour forcer un domaine STRICT sur l'emplacement source
+        return super(StockPicking, self.with_context(quelyos_force_exact_location=True)).action_assign()
 
     # -------------------------------------------------------------------------
     #  LOGGING CHATTTER ROBUSTE
     # -------------------------------------------------------------------------
     def _safe_message_post(self, record, body):
-        """
-        Poste un message dans le chatter de 'record' de façon robuste :
-        - tente avec subtype_id = mail.mt_note
-        - sinon, poste sans subtype (fallback)
-        Retourne l'ID du mail.message créé (ou False).
-        """
         if not record:
             return False
         try:
@@ -33,21 +28,17 @@ class StockPicking(models.Model):
                 subtype = self.env.ref("mail.mt_note").id
             except Exception:
                 subtype = None
-
-            kwargs = {"body": body, "message_type": "comment"}
+            kw = {"body": body, "message_type": "comment"}
             if subtype:
-                kwargs["subtype_id"] = subtype
-
-            msg = record.sudo().message_post(**kwargs)
-            mid = getattr(msg, "id", False)
-            _logger.info("Quelyos DP: message_post on %s -> mid=%s", record.display_name, mid)
-            return mid or False
+                kw["subtype_id"] = subtype
+            msg = record.sudo().message_post(**kw)
+            _logger.info("Quelyos DP: message_post on %s -> mid=%s", record.display_name, getattr(msg, "id", False))
+            return getattr(msg, "id", False) or False
         except Exception as e:
             _logger.exception("Quelyos DP: message_post failed on %s: %s", getattr(record, "display_name", record), e)
             return False
 
     def _post_quelyos_log(self, body):
-        """Poste sur le picking + la sale order (si liée), avec fallback robuste."""
         self.ensure_one()
         self._safe_message_post(self, body)
         if self.sale_id:
@@ -59,11 +50,11 @@ class StockPicking(models.Model):
     def _quelyos_apply_strategy_if_needed(self):
         """
         Applique la stratégie AVANT la réservation:
-         1) vérifie l’éligibilité (log skip reason uniquement pour sortants)
-         2) annule toute réservation EXISTANTE (unreserve) AVANT calcul besoins
-         3) calcule les besoins
+         1) vérifie l’éligibilité
+         2) unreserve existant
+         3) calcule besoins
          4) choisit la source (P1→P4) et recible les moves
-         5) crée un réassort central->source si besoin (auto confirm/assign [+ auto validate] selon paramètres)
+         5) crée un réassort central->source si besoin (auto confirm/assign [+ auto validate])
         """
         self.ensure_one()
 
@@ -107,7 +98,7 @@ class StockPicking(models.Model):
             self._post_quelyos_log(_("Quelyos – Dynamic Picking: aucune source sélectionnée (détails: %s).") % details)
             return
 
-        # (4) Re-cibler tous les moves vers l’emplacement choisi
+        # (4) Re-cibler tous les moves + éventuelles move lines déjà présentes
         self._quelyos_retarget_moves(choice)
 
         # (5) Réassort central -> source si nécessaire
@@ -129,14 +120,10 @@ class StockPicking(models.Model):
                                 repick.button_validate()
                         except Exception as e:
                             _logger.exception("Auto-confirm/assign/validate failed on replenishment %s: %s", repick.name, e)
-                            self._safe_message_post(
-                                repick,
-                                _("Échec auto (confirm/réservation/validation) : %s") % e
-                            )
+                            self._safe_message_post(repick, _("Échec auto (confirm/réservation/validation) : %s") % e)
 
                     msg = _(
-                        "Réassort interne créé : <b>%s</b> (de %s vers %s). "
-                        "Produits/Qtés manquants : %s"
+                        "Réassort interne créé : <b>%s</b> (de %s vers %s). Produits/Qtés manquants : %s"
                     ) % (
                         repick.name,
                         central.display_name,
@@ -148,7 +135,7 @@ class StockPicking(models.Model):
                     )
                     self._post_quelyos_log(msg)
 
-        # (6) Log final optionnel : lecture TOLÉRANTE du param système
+        # (6) Log final optionnel
         raw = ICP.get_param("quelyos_dynamic_log_success")
         log_success = False
         if raw is not None:
@@ -295,9 +282,18 @@ class StockPicking(models.Model):
         return chosen, "; ".join(details)
 
     def _quelyos_retarget_moves(self, new_source_location):
+        """Force l’emplacement source sur moves ET éventuelles move lines existantes."""
+        # Moves
         for mv in self.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",)):
             if mv.location_id.id != new_source_location.id:
                 mv.location_id = new_source_location.id
+        # Move lines déjà générées (au cas où)
+        mls = self.move_line_ids.filtered(lambda ml: ml.state != "cancel")
+        if mls:
+            try:
+                mls.write({"location_id": new_source_location.id})
+            except Exception as e:
+                _logger.info("Quelyos DP: impossible d'imposer location sur move lines %s: %s", self.name, e)
 
     def _quelyos_missing_by_product(self, req, chosen_location, basis):
         missing = {}
