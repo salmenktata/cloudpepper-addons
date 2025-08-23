@@ -9,12 +9,38 @@ _logger = logging.getLogger(__name__)
 class StockPicking(models.Model):
     _inherit = "stock.picking"
 
+    # -------------------------------------------------------------------------
+    #  Réservation
+    # -------------------------------------------------------------------------
     def action_assign(self):
-        # Appliquer la stratégie avant la réservation standard
+        """
+        1) Applique la stratégie Quelyos avant la réservation standard
+        2) Fait la réservation (avec contexte qui resserre le domaine sur l'emplacement exact)
+        3) Poste un log de succès dans le chatter récapitulant la réservation effective par emplacement
+        """
+        # 1) stratégie
         for picking in self:
             picking._quelyos_apply_strategy_if_needed()
-        # 👉 Contexte spécial pour forcer un domaine STRICT sur l'emplacement source
-        return super(StockPicking, self.with_context(quelyos_force_exact_location=True)).action_assign()
+
+        # 2) assign standard, mais avec contexte qui force un domaine "in" (voir stock_move.py)
+        res = super(StockPicking, self.with_context(quelyos_force_exact_location=True)).action_assign()
+
+        # 3) log de succès (optionnel) : récap de ce qui a été réellement réservé
+        ICP = self.env["ir.config_parameter"].sudo()
+        raw = ICP.get_param("quelyos_dynamic_log_success")
+        log_success = False
+        if raw is not None:
+            s = str(raw).strip().lower()
+            log_success = s in ("1", "true", "t", "yes", "y", "on")
+
+        if log_success:
+            for picking in self:
+                try:
+                    picking._quelyos_post_effective_reservation_log()
+                except Exception as e:
+                    _logger.exception("Quelyos DP: échec log réservation effective sur %s: %s", picking.name, e)
+
+        return res
 
     # -------------------------------------------------------------------------
     #  LOGGING CHATTTER ROBUSTE
@@ -44,6 +70,37 @@ class StockPicking(models.Model):
         if self.sale_id:
             self._safe_message_post(self.sale_id, body)
 
+    def _quelyos_post_effective_reservation_log(self):
+        """
+        Récapitule ce qui a été effectivement réservé par emplacement (somme des move lines).
+        Post uniquement si des lignes de réservation existent.
+        """
+        self.ensure_one()
+        # Regrouper par (location_id)
+        by_loc = defaultdict(float)
+        default_uom = None
+        for ml in self.move_line_ids.filtered(lambda l: l.state != 'cancel' and l.product_id and l.product_uom_qty):
+            # Convertit en UdM du produit pour homogénéiser l’affichage
+            prod = ml.product_id
+            qty_in_product_uom = ml.product_uom._compute_quantity(ml.product_uom_qty, prod.uom_id, rounding_method="HALF-UP")
+            by_loc[ml.location_id.id] += qty_in_product_uom
+            if default_uom is None:
+                default_uom = prod.uom_id
+
+        if not by_loc:
+            return  # rien à afficher
+
+        # Construire message HTML
+        lines = []
+        for loc_id, qty in by_loc.items():
+            loc = self.env['stock.location'].browse(loc_id)
+            lines.append("&nbsp;&nbsp;• <b>%s</b> : %s %s" % (loc.display_name, qty, default_uom.display_name if default_uom else ""))
+
+        body = _(
+            "Quelyos – Dynamic Picking: réservation effective<br/>%s"
+        ) % ("<br/>".join(lines))
+        self._post_quelyos_log(body)
+
     # -------------------------------------------------------------------------
     #  STRATÉGIE
     # -------------------------------------------------------------------------
@@ -61,7 +118,7 @@ class StockPicking(models.Model):
         ok, reason = self._quelyos_should_run_strategy_with_reason()
         if not ok:
             _logger.info("Quelyos DP: SKIP on %s -> %s", self.name, reason)
-            # On loggue seulement pour les flux sortants/PICK pour éviter du bruit inutile
+            # log d'info uniquement pour les flux sortants/PICK pour aider au debug
             if self.picking_type_id.code in ("outgoing", "internal"):
                 self._post_quelyos_log(_("Quelyos – Dynamic Picking: stratégie ignorée. Raison: <i>%s</i>.") % reason)
             return
@@ -76,7 +133,7 @@ class StockPicking(models.Model):
             self._post_quelyos_log(_("Quelyos – Dynamic Picking: ignoré (aucune configuration d'emplacements définie)."))
             return
 
-        # (1) Unreserve AVANT de calculer les besoins
+        # 1) unreserve
         moves_to_unreserve = self.move_ids_without_package.filtered(
             lambda m: m.state not in ('cancel',) and (m.reserved_availability or 0.0) > 0.0
         )
@@ -87,22 +144,22 @@ class StockPicking(models.Model):
                 _logger.exception("Unreserve failed on picking %s: %s", self.name, e)
                 self._post_quelyos_log(_("Échec libération des réservations existantes : %s") % e)
 
-        # (2) Besoins nets
+        # 2) besoins nets
         req = self._quelyos_requirements_per_product()
         if not req:
             self._post_quelyos_log(_("Quelyos – Dynamic Picking: ignoré (aucun besoin net à réserver)."))
             return
 
-        # (3) Choix de la source
+        # 3) choix source
         choice, details = self._quelyos_choose_source(req, central, shops, basis, strict_enabled, strict_order_text)
         if not choice:
             self._post_quelyos_log(_("Quelyos – Dynamic Picking: aucune source sélectionnée (détails: %s).") % details)
             return
 
-        # (4) Re-cibler le picking, tous les moves ET éventuelles move lines déjà présentes
+        # 4) reciblage
         self._quelyos_retarget_moves(choice)
 
-        # (5) Réassort central -> source si nécessaire
+        # 5) réassort interne si nécessaire (central -> source choisie)
         if central and choice.id != central.id:
             missing = self._quelyos_missing_by_product(req, choice, basis)
             if any(qty > 0 for qty in missing.values()):
@@ -136,7 +193,7 @@ class StockPicking(models.Model):
                     )
                     self._post_quelyos_log(msg)
 
-        # (6) Log final optionnel
+        # 6) log informatif (source retenue)
         raw = ICP.get_param("quelyos_dynamic_log_success")
         log_success = False
         if raw is not None:
@@ -280,6 +337,7 @@ class StockPicking(models.Model):
             details.append(_("P3: Aucune boutique ne couvre tout"))
 
         # P4: Meilleure couverture globale (central vs boutiques)
+        # (Mode souple : on choisit le meilleur "pivot" puis on crée un réassort central->pivot s'il manque)
         candidates = []
         if central:
             cov = coverage_score(central)
