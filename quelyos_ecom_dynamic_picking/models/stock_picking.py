@@ -253,15 +253,16 @@ class StockPicking(models.Model):
                     return loc, "; ".join(details)
             details.append(_("P2: Aucune boutique de l'ordre strict ne couvre tout"))
 
-        # P3: Sans ordre strict → meilleure boutique qui couvre tout
+        # P3: Sans ordre strict → meilleure boutique qui couvre tout (tri explicite)
         if not strict_enabled and shops:
             candidates = []
             for loc in shops:
                 if covers_all(loc):
-                    cov = coverage_score(loc)
+                    cov = coverage_score(loc)  # (cover_sum, free_sum)
                     candidates.append((cov[0], cov[1], loc))
             if candidates:
-                candidates.sort(reverse=True)
+                # Tri clair: 1) couverture (doit = besoin total), 2) stock libre total
+                candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
                 best = candidates[0][2]
                 details.append(_("P3: Meilleure boutique (sans ordre strict) couvrant tout → %s") % best.display_name)
                 return best, "; ".join(details)
@@ -275,7 +276,7 @@ class StockPicking(models.Model):
         for loc in shops:
             cov = coverage_score(loc)
             candidates.append((cov[0], cov[1], loc))
-        candidates.sort(reverse=True)
+        candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
         chosen = candidates[0][2] if candidates else False
         if chosen:
             details.append(_("P4: Personne ne couvre 100%% → meilleure couverture globale → %s") % chosen.display_name)
