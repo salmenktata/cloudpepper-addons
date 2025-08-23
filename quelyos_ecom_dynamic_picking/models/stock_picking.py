@@ -157,22 +157,29 @@ class StockPicking(models.Model):
         return True
 
     def _quelyos_should_run_strategy_with_reason(self):
-        self.ensure_one()
-        ICP = self.env["ir.config_parameter"].sudo()
+    self.ensure_one()
+    ICP = self.env["ir.config_parameter"].sudo()
 
-        enabled = str(ICP.get_param("quelyos_dynamic_enabled") or "False") in ("1", "True", "true")
-        if not enabled:
-            return False, _("stratégie désactivée dans Paramètres > Ventes")
+    enabled = str(ICP.get_param("quelyos_dynamic_enabled") or "False") in ("1", "True", "true")
+    if not enabled:
+        return False, _("stratégie désactivée dans Paramètres > Ventes")
 
-        if self.picking_type_id.code != "outgoing":
-            return False, _("picking non-sortant (code != 'outgoing')")
+    # ✅ Autoriser la stratégie sur :
+    # - les livraisons sortantes (code == 'outgoing')
+    # - le picking de 1ʳᵉ étape d'un flux en 2 étapes (type 'internal' avec sequence_code == 'PICK')
+    pt = self.picking_type_id
+    is_out = (pt.code == "outgoing")
+    is_pick_step = (pt.code == "internal" and (pt.sequence_code or "").upper() == "PICK")
+    if not (is_out or is_pick_step):
+        return False, _("picking non éligible (ni 'outgoing', ni étape PICK interne)")
 
-        ecom_only = str(ICP.get_param("quelyos_dynamic_ecom_only") or "False") in ("1", "True", "true")
-        if ecom_only:
-            so = self.sale_id
-            if not so or not hasattr(so, "website_id") or not so.website_id:
-                return False, _("option 'Limiter aux commandes eCommerce' activée et ce picking ne provient pas d'une commande web")
-        return True, ""
+    ecom_only = str(ICP.get_param("quelyos_dynamic_ecom_only") or "False") in ("1", "True", "true")
+    if ecom_only:
+        so = self.sale_id
+        if not so or not getattr(so, "website_id", False):
+            return False, _("option 'Limiter aux commandes eCommerce' activée et ce picking ne provient pas d'une commande web")
+    return True, ""
+
 
     def _quelyos_get_locations_from_conf(self):
         ICP = self.env["ir.config_parameter"].sudo()
