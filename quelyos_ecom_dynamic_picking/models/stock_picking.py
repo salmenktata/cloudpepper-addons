@@ -53,7 +53,7 @@ class StockPicking(models.Model):
          1) vérifie l’éligibilité
          2) unreserve existant
          3) calcule besoins
-         4) choisit la source (P1→P4) et recible les moves
+         4) choisit la source (P1→P4) et recible le picking + les moves
          5) crée un réassort central->source si besoin (auto confirm/assign [+ auto validate])
         """
         self.ensure_one()
@@ -98,7 +98,7 @@ class StockPicking(models.Model):
             self._post_quelyos_log(_("Quelyos – Dynamic Picking: aucune source sélectionnée (détails: %s).") % details)
             return
 
-        # (4) Re-cibler tous les moves + éventuelles move lines déjà présentes
+        # (4) Re-cibler le picking, tous les moves ET éventuelles move lines déjà présentes
         self._quelyos_retarget_moves(choice)
 
         # (5) Réassort central -> source si nécessaire
@@ -282,12 +282,22 @@ class StockPicking(models.Model):
         return chosen, "; ".join(details)
 
     def _quelyos_retarget_moves(self, new_source_location):
-        """Force l’emplacement source sur moves ET éventuelles move lines existantes."""
-        # Moves
+        """
+        Force l’emplacement source sur:
+          - le picking lui-même (location_id)
+          - tous les moves (stock.move.location_id)
+          - les éventuelles move lines existantes (stock.move.line.location_id)
+        """
+        # 👉 4.a) P I C K I N G
+        if self.location_id.id != new_source_location.id:
+            self.location_id = new_source_location.id
+
+        # 👉 4.b) M O V E S
         for mv in self.move_ids_without_package.filtered(lambda m: m.state not in ("cancel",)):
             if mv.location_id.id != new_source_location.id:
                 mv.location_id = new_source_location.id
-        # Move lines déjà générées (au cas où)
+
+        # 👉 4.c) M O V E  L I N E S  (si déjà créées)
         mls = self.move_line_ids.filtered(lambda ml: ml.state != "cancel")
         if mls:
             try:
