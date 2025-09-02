@@ -273,7 +273,9 @@ class SaleOrder(models.Model):
 
     def _action_confirm(self):
         res = super()._action_confirm()
-        pickings = self.mapped("picking_ids").filtered(lambda p: p.picking_type_id.code == "outgoing")
+        pickings = self.mapped("picking_ids").filtered(
+        lambda p: p.picking_type_id and p.picking_type_id.code in ("pick", "internal", "outgoing")
+        )
         for p in pickings:
             p._quelyos_apply_auto_source_strategy()
         return res
