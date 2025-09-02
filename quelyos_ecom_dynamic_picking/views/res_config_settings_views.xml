@@ -4,19 +4,14 @@
     <record id="res_config_settings_view_form_inherit_quelyos_dynamic_picking" model="ir.ui.view">
         <field name="name">res.config.settings.view.form.inherit.quelyos.dynamic.picking</field>
         <field name="model">res.config.settings</field>
-        <!-- On s'accroche à la vue paramètres Ventes -->
         <field name="inherit_id" ref="sale.res_config_settings_view_form"/>
         <field name="priority" eval="90"/>
         <field name="arch" type="xml">
-
-            <!-- Ancrage robuste directement dans <form> pour éviter les xpaths fragiles -->
             <xpath expr="//form" position="inside">
                 <div class="app_settings_block" data-string="Quelyos – Dynamic Picking" data-key="quelyos_dynamic_picking">
                     <h2>Quelyos – Dynamic Picking</h2>
+                    <div class="row mt16">
 
-                    <div class="row mt16 o_settings_container">
-
-                        <!-- Ligne 1 : activation + eCommerce -->
                         <div class="col-12 col-md-6 o_setting_box">
                             <div class="o_setting_left_pane">
                                 <field name="quelyos_dynamic_enabled"/>
@@ -36,56 +31,47 @@
                             <div class="o_setting_right_pane">
                                 <label for="quelyos_dynamic_ecom_only"/>
                                 <div class="text-muted">
-                                    Appliquer uniquement aux commandes eCommerce (SO lié à un site web).
+                                    Limiter l'application aux livraisons issues du site eCommerce.
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Ligne 2 (pleine largeur) : Base de stock -->
-                        <div class="col-12 o_setting_box">
+                        <div class="col-12 col-md-6 o_setting_box">
                             <div class="o_setting_left_pane">
-                                <field name="quelyos_dynamic_stock_basis" widget="selection"/>
+                                <field name="quelyos_dynamic_stock_basis"/>
                             </div>
                             <div class="o_setting_right_pane">
                                 <label for="quelyos_dynamic_stock_basis"/>
                                 <div class="text-muted">
-                                    Base de calcul du disponible : <b>Libre</b> (free qty), <b>On‑Hand</b> (physique),
-                                    <b>Prévisionnel</b> (virtual available).
+                                    Base de stock utilisée pour évaluer la capacité (libre / physique / prévisionnel).
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Ligne 3 (pleine largeur) : Emplacement central -->
-                        <div class="col-12 o_setting_box">
+                        <div class="col-12 col-md-6 o_setting_box">
                             <div class="o_setting_left_pane">
-                                <field name="quelyos_dynamic_central_location_id"
-                                       widget="many2one"
-                                       options="{'no_create': True, 'no_open': True}"/>
+                                <field name="quelyos_dynamic_central_location_id" options="{'no_create': True}"/>
                             </div>
                             <div class="o_setting_right_pane">
                                 <label for="quelyos_dynamic_central_location_id"/>
                                 <div class="text-muted">
-                                    Sélectionnez l’emplacement <b>central</b> (ex. <i>CENT/Stock</i>).
+                                    Emplacement central à prioriser si capable de couvrir 100% d'une ligne.
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Ligne 4 : Boutiques considérées (pleine largeur pour lisibilité tags) -->
                         <div class="col-12 o_setting_box">
                             <div class="o_setting_left_pane">
-                                <field name="quelyos_dynamic_shop_ids"
-                                       widget="many2many_tags"
-                                       options="{'no_create': True, 'no_open': True}"/>
+                                <field name="quelyos_dynamic_shop_ids" widget="many2many_tags" options="{'no_create': True}"/>
                             </div>
                             <div class="o_setting_right_pane">
                                 <label for="quelyos_dynamic_shop_ids"/>
                                 <div class="text-muted">
-                                    Emplacements “boutiques” considérés par la stratégie (ne pas inclure le central).
+                                    Boutiques (emplacements) à considérer comme sources.
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Ligne 5 : Ordre strict + ordre -->
                         <div class="col-12 col-md-6 o_setting_box">
                             <div class="o_setting_left_pane">
                                 <field name="quelyos_dynamic_strict_order_enabled"/>
@@ -93,24 +79,23 @@
                             <div class="o_setting_right_pane">
                                 <label for="quelyos_dynamic_strict_order_enabled"/>
                                 <div class="text-muted">
-                                    Si activé : on choisit la première boutique de la liste qui couvre toute la commande.
+                                    Imposer un ordre strict de priorité des boutiques.
                                 </div>
                             </div>
                         </div>
 
-                        <div class="col-12 col-md-6 o_setting_box">
+                        <div class="col-12 col-md-6 o_setting_box" attrs="{'invisible':[('quelyos_dynamic_strict_order_enabled','=',False)]}">
                             <div class="o_setting_left_pane">
                                 <field name="quelyos_dynamic_strict_shop_order" placeholder="Gafsa>Sousse>Soukra"/>
                             </div>
                             <div class="o_setting_right_pane">
                                 <label for="quelyos_dynamic_strict_shop_order"/>
                                 <div class="text-muted">
-                                    Ordre strict des boutiques, séparées par “&gt;”.
+                                    Ordre imposé (séparateur &quot;&gt;&quot;). Correspond aux noms d'affichage des emplacements.
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Ligne 6 : Réassort auto confirm/assign + auto-validate -->
                         <div class="col-12 col-md-6 o_setting_box">
                             <div class="o_setting_left_pane">
                                 <field name="quelyos_dynamic_auto_confirm_replenishment"/>
@@ -118,7 +103,7 @@
                             <div class="o_setting_right_pane">
                                 <label for="quelyos_dynamic_auto_confirm_replenishment"/>
                                 <div class="text-muted">
-                                    Confirme et tente la réservation automatique du réassort interne créé.
+                                    Confirmer et tenter la réservation automatique du réassort interne créé.
                                 </div>
                             </div>
                         </div>
@@ -130,12 +115,11 @@
                             <div class="o_setting_right_pane">
                                 <label for="quelyos_dynamic_auto_validate_replenishment"/>
                                 <div class="text-muted">
-                                    Valide automatiquement le réassort si toutes les lignes sont entièrement réservées.
+                                    Valider automatiquement le réassort si 100% réservé.
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Ligne 7 : Log de succès optionnel -->
                         <div class="col-12 col-md-6 o_setting_box">
                             <div class="o_setting_left_pane">
                                 <field name="quelyos_dynamic_log_success"/>
