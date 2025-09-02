@@ -134,7 +134,9 @@ class StockPicking(models.Model):
     # ---------------------------------------------------------------------
     def _quelyos_apply_auto_source_strategy(self):
         for picking in self:
-            if not picking.picking_type_id or picking.picking_type_id.code != "outgoing":
+            # APRÈS — traiter aussi les flux 2 étapes (pick) et certains internes
+            code = picking.picking_type_id and picking.picking_type_id.code or ""
+            if code not in ("pick", "internal", "outgoing"):
                 continue
 
             strategy = self._qconf_get("strategy", "custom")
