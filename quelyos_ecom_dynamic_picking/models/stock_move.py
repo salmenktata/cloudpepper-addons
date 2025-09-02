@@ -4,44 +4,37 @@ from odoo import models
 
 _logger = logging.getLogger(__name__)
 
+# Log de chargement à l'import (doit apparaître au boot / upgrade)
+_logger.warning("QDP: stock_move override LOADED")
+
 
 class StockMove(models.Model):
     _inherit = "stock.move"
 
     def _get_domain_locations(self):
         """
-        Odoo réserve classiquement dans child_of(location_id).
-        Quand le contexte 'quelyos_force_exact_location' est présent,
-        on resserre le domaine pour NE prendre que l'emplacement exact.
-        (Version avec logs de debug.)
+        Par défaut, Odoo réserve dans child_of(location_id).
+        Avec le contexte 'quelyos_force_exact_location', on resserre pour NE prendre
+        que l'emplacement exact (location_id IN [move.location_id]).
         """
         res = super()._get_domain_locations()
 
+        # Si pas de contexte "exact", on garde le comportement standard
         if not self.env.context.get("quelyos_force_exact_location"):
             return res
 
-        # ---- DEBUG: tracer côté logs + chatter du picking si possible
+        # --- DEBUG facultatif : log sur le serveur pour confirmer l'activation
         try:
-            # log serveur
             _logger.info(
-                "Quelyos EXACT: _get_domain_locations for move %s (src=%s)",
+                "QDP EXACT: move=%s, src=%s",
                 self.display_name,
-                self.location_id.display_name,
+                self.location_id.display_name if self.location_id else "N/A",
             )
-            # log chatter (si on a un picking_id)
-            for p in self.mapped("picking_id"):
-                try:
-                    p.message_post(
-                        body="⚡ DEBUG Quelyos: réservation EXACT activée "
-                             f"(move={self.display_name}, src={self.location_id.display_name})"
-                    )
-                except Exception:
-                    pass
         except Exception:
             pass
-        # ---- /DEBUG
 
-        def _tighten(domain_list, loc_ids):
+        def tighten(domain_list, loc_ids):
+            """Remplace ('location_id','child_of',X) par ('location_id','in',loc_ids)"""
             if not isinstance(domain_list, list):
                 return domain_list
             for i, term in enumerate(domain_list):
@@ -58,8 +51,9 @@ class StockMove(models.Model):
             loc_ids = self.location_id.ids
             if isinstance(res, (list, tuple)) and len(res) >= 2:
                 src_domain, dest_domain = res[0], res[1]
-                src_domain = _tighten(src_domain, loc_ids)
+                src_domain = tighten(src_domain, loc_ids)
                 return (src_domain, dest_domain)
         except Exception as e:
-            _logger.info("Quelyos DP: exact-location tightening failed: %s", e)
+            _logger.info("QDP: exact-location tightening failed: %s", e)
+
         return res
