@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_quelyos_dynamic_picking_sales_settings" model="ir.ui.view">
+        <field name="name">quelyos.dynamic.picking.sales.settings</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="sale.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//block[@name='sale_shipping_setting_container']" position="inside">
+                <setting id="quelyos_dynamic_picking" string="Quelyos – Dynamic Picking"
+                         help="exp : active la sélection automatique de la source pour les livraisons sortantes, avec réassort interne automatique si nécessaire.">
+                    <div class="o_form_label">Stratégie appliquée</div>
+                    <field name="quelyos_dynamic_strategy"/>
+                    <div class="o_form_label mt8">Type de stock utilisé</div>
+                    <field name="quelyos_dynamic_stock_basis"/>
+                    <div class="o_form_label mt8">N’appliquer que sur les commandes eCommerce</div>
+                    <field name="quelyos_dynamic_only_website"/>
+
+                    <div class="o_form_label mt8">Emplacement central (CENT/Stock)</div>
+                    <field name="quelyos_dynamic_central_location_id" options="{'no_open': True}"/>
+
+                    <div class="o_form_label mt8">Boutiques à considérer</div>
+                    <field name="quelyos_dynamic_shop_ids" widget="many2many_tags" options="{'no_open': True}"/>
+
+                    <div class="o_form_label mt8">Ordre strict des boutiques</div>
+                    <field name="quelyos_dynamic_strict_order_enabled"/>
+                    <div class="text-muted">exp : si activé, teste Gafsa > Sousse > Soukra (ou l’ordre saisi ci‑dessous) et prend la première couvrant toute la commande.</div>
+
+                    <div class="o_form_label mt8">Ordre des boutiques (ex: Gafsa&gt;Sousse&gt;Soukra)</div>
+                    <field name="quelyos_dynamic_shop_order_names" placeholder="Gafsa>Sousse>Soukra"/>
+                </setting>
+            </xpath>
+        </field>
+    </record>
+</odoo>
