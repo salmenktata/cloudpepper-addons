@@ -59,3 +59,10 @@ class ResCompany(models.Model):
         string="Afficher un log de succès dans le chatter",
         default=False
     )
+
+    # (NOUVEAU) Couverture partielle
+    quelyos_dynamic_partial_enabled = fields.Boolean(
+        string="Activer la couverture partielle (Priorité 4)",
+        default=True,
+        help="Si aucun emplacement ne couvre 100%, choisir l'emplacement offrant la meilleure couverture et, si possible, réassortir le manque depuis le central."
+    )
