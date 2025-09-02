@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Quelyos – Dynamic Picking (TEST)',
-    'version': '2.3.3',
+    'version': '2.3.4',
     'summary': "Sélection automatique de l'emplacement source pour les commandes eCommerce",
     'description': """
 Ce module permet d'appliquer une stratégie dynamique pour déterminer automatiquement 
