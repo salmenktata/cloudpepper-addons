@@ -64,3 +64,10 @@ class ResConfigSettings(models.TransientModel):
         related="company_id.quelyos_dynamic_log_success",
         readonly=False
     )
+
+    # (NOUVEAU) Couverture partielle
+    quelyos_dynamic_partial_enabled = fields.Boolean(
+        string="Activer la couverture partielle (Priorité 4)",
+        related="company_id.quelyos_dynamic_partial_enabled",
+        readonly=False
+    )
